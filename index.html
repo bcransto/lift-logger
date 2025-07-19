@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -18,7 +17,7 @@
         -webkit-tap-highlight-color: transparent;
       }
 
-      ``` body {
+      body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
         background: #f2f2f7;
@@ -455,13 +454,11 @@
         color: white;
       }
     </style>
-    ```
   </head>
   <body>
     <!-- Sync Status -->
     <div id="syncStatus" class="sync-status"></div>
 
-    ```
     <!-- Home View -->
     <div id="homeView" class="view active">
       <div class="header">
@@ -1031,27 +1028,27 @@
           const content = document.getElementById("modalContent");
 
           content.innerHTML = `
-                <div class="modal-header">
-                    <h2 class="modal-title">Select Workout</h2>
-                    <button class="modal-close" onclick="app.closeModal()">Cancel</button>
-                </div>
-                <div class="list-container" style="margin: 0">
-                    ${this.dataStore.workouts
-                      .map(
-                        (workout) => `
-                        <div class="list-item" onclick="app.startWorkout('${workout.id}')">
-                            <div>
-                                <div class="list-item-title">${workout.name}</div>
-                                <div class="list-item-subtitle">${workout.exercises.length} exercises</div>
+                    <div class="modal-header">
+                        <h2 class="modal-title">Select Workout</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="list-container" style="margin: 0">
+                        ${this.dataStore.workouts
+                          .map(
+                            (workout) => `
+                            <div class="list-item" onclick="app.startWorkout('${workout.id}')">
+                                <div>
+                                    <div class="list-item-title">${workout.name}</div>
+                                    <div class="list-item-subtitle">${workout.exercises.length} exercises</div>
+                                </div>
+                                <div class="list-item-arrow">›</div>
                             </div>
-                            <div class="list-item-arrow">›</div>
-                        </div>
-                    `
-                      )
-                      .join("")}
-                </div>
-                <button class="button-secondary" onclick="app.showAddWorkoutModal()">Create New Workout</button>
-            `;
+                        `
+                          )
+                          .join("")}
+                    </div>
+                    <button class="button-secondary" onclick="app.showAddWorkoutModal()">Create New Workout</button>
+                `;
 
           modal.classList.add("show");
         }
@@ -1075,38 +1072,40 @@
 
           const container = document.getElementById("workoutExercises");
           container.innerHTML = `
-                <div class="list-container">
-                    ${workout.exercises
-                      .map((ex) => {
-                        const exercise = this.dataStore.exerciseMap.get(
-                          ex.exerciseId
-                        );
-                        const isCompleted =
-                          this.currentWorkout.completedExercises.includes(
-                            ex.exerciseId
-                          );
-
-                        return `
-                            <div class="exercise-item" onclick="app.startExercise('${
+                    <div class="list-container">
+                        ${workout.exercises
+                          .map((ex) => {
+                            const exercise = this.dataStore.exerciseMap.get(
                               ex.exerciseId
-                            }')">
-                                <div class="exercise-check ${
-                                  isCompleted ? "completed" : ""
-                                }"></div>
-                                <div class="exercise-info">
-                                    <div class="exercise-name">${
-                                      exercise.name
-                                    }</div>
-                                    <div class="exercise-sets">${
-                                      isCompleted ? "Completed" : "Not started"
-                                    }</div>
+                            );
+                            const isCompleted =
+                              this.currentWorkout.completedExercises.includes(
+                                ex.exerciseId
+                              );
+
+                            return `
+                                <div class="exercise-item" onclick="app.startExercise('${
+                                  ex.exerciseId
+                                }')">
+                                    <div class="exercise-check ${
+                                      isCompleted ? "completed" : ""
+                                    }"></div>
+                                    <div class="exercise-info">
+                                        <div class="exercise-name">${
+                                          exercise.name
+                                        }</div>
+                                        <div class="exercise-sets">${
+                                          isCompleted
+                                            ? "Completed"
+                                            : "Not started"
+                                        }</div>
+                                    </div>
                                 </div>
-                            </div>
-                        `;
-                      })
-                      .join("")}
-                </div>
-            `;
+                            `;
+                          })
+                          .join("")}
+                    </div>
+                `;
         }
 
         startExercise(exerciseId) {
@@ -1131,52 +1130,52 @@
           // PR Section
           if (pr) {
             html += `
-                    <div class="info-section">
-                        <div class="info-row">
-                            <span class="info-label">Personal Record</span>
-                            <span class="info-value pr-value">${
-                              pr.weight
-                            } lbs × ${pr.reps}</span>
+                        <div class="info-section">
+                            <div class="info-row">
+                                <span class="info-label">Personal Record</span>
+                                <span class="info-value pr-value">${
+                                  pr.weight
+                                } lbs × ${pr.reps}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">PR Date</span>
+                                <span class="info-value">${this.formatDate(
+                                  pr.date
+                                )}</span>
+                            </div>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">PR Date</span>
-                            <span class="info-value">${this.formatDate(
-                              pr.date
-                            )}</span>
-                        </div>
-                    </div>
-                `;
+                    `;
           }
 
           // Previous Workout
           if (lastWorkout && lastWorkout.length > 0) {
             html += `
-                    <div class="section-title">Last Time (${this.formatDate(
-                      lastWorkout[0].date
-                    )})</div>
-                    <div class="previous-sets">
-                        ${lastWorkout
-                          .map(
-                            (set) => `
-                            <div class="previous-set">
-                                <span class="previous-set-number">Set ${set.set}</span>
-                                <span class="previous-set-data">${set.weight} lbs × ${set.reps}</span>
-                            </div>
-                        `
-                          )
-                          .join("")}
-                    </div>
-                `;
+                        <div class="section-title">Last Time (${this.formatDate(
+                          lastWorkout[0].date
+                        )})</div>
+                        <div class="previous-sets">
+                            ${lastWorkout
+                              .map(
+                                (set) => `
+                                <div class="previous-set">
+                                    <span class="previous-set-number">Set ${set.set}</span>
+                                    <span class="previous-set-data">${set.weight} lbs × ${set.reps}</span>
+                                </div>
+                            `
+                              )
+                              .join("")}
+                        </div>
+                    `;
           }
 
           // Today's Sets
           html += `
-                <div class="section-title">Today</div>
-                <div id="todaysSets" class="sets-container">
-                    ${this.renderCurrentSets()}
-                </div>
-                <button class="button-secondary" onclick="app.addSet()">+ Add Set</button>
-            `;
+                    <div class="section-title">Today</div>
+                    <div id="todaysSets" class="sets-container">
+                        ${this.renderCurrentSets()}
+                    </div>
+                    <button class="button-secondary" onclick="app.addSet()">+ Add Set</button>
+                `;
 
           document.getElementById("exerciseContent").innerHTML = html;
 
@@ -1192,30 +1191,30 @@
           return this.currentSets
             .map(
               (set, index) => `
-                <div class="set-row">
-                    <span class="set-number">Set ${index + 1}</span>
-                    <div class="set-inputs">
-                        <div class="input-group">
-                            <input type="number" id="weight_${index}" placeholder="${
+                    <div class="set-row">
+                        <span class="set-number">Set ${index + 1}</span>
+                        <div class="set-inputs">
+                            <div class="input-group">
+                                <input type="number" id="weight_${index}" placeholder="${
                 set.placeholderWeight || ""
               }" 
-                                   value="${
-                                     set.weight || ""
-                                   }" onchange="app.updateSet(${index}, 'weight', this.value)" />
-                            <span class="input-label">lbs</span>
-                        </div>
-                        <div class="input-group">
-                            <input type="number" id="reps_${index}" placeholder="${
+                                       value="${
+                                         set.weight || ""
+                                       }" onchange="app.updateSet(${index}, 'weight', this.value)" />
+                                <span class="input-label">lbs</span>
+                            </div>
+                            <div class="input-group">
+                                <input type="number" id="reps_${index}" placeholder="${
                 set.placeholderReps || ""
               }" 
-                                   value="${
-                                     set.reps || ""
-                                   }" onchange="app.updateSet(${index}, 'reps', this.value)" />
-                            <span class="input-label">reps</span>
+                                       value="${
+                                         set.reps || ""
+                                       }" onchange="app.updateSet(${index}, 'reps', this.value)" />
+                                <span class="input-label">reps</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `
+                `
             )
             .join("");
         }
@@ -1347,48 +1346,48 @@
 
           if (this.dataStore.workouts.length === 0) {
             container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-title">No Workouts</div>
-                        <p>Create your first workout template</p>
-                    </div>
-                `;
+                        <div class="empty-state">
+                            <div class="empty-state-title">No Workouts</div>
+                            <p>Create your first workout template</p>
+                        </div>
+                    `;
             return;
           }
 
           container.innerHTML = `
-                <div class="list-container">
-                    ${this.dataStore.workouts
-                      .map(
-                        (workout) => `
-                        <div class="list-item">
-                            <div>
-                                <div class="list-item-title">${workout.name}</div>
-                                <div class="list-item-subtitle">${workout.exercises.length} exercises</div>
+                    <div class="list-container">
+                        ${this.dataStore.workouts
+                          .map(
+                            (workout) => `
+                            <div class="list-item">
+                                <div>
+                                    <div class="list-item-title">${workout.name}</div>
+                                    <div class="list-item-subtitle">${workout.exercises.length} exercises</div>
+                                </div>
                             </div>
-                        </div>
-                    `
-                      )
-                      .join("")}
-                </div>
-            `;
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
         }
 
         loadExercisesList() {
           const container = document.getElementById("exercisesList");
 
           container.innerHTML = `
-                <div class="list-container">
-                    ${this.dataStore.exercises
-                      .map(
-                        (exercise) => `
-                        <div class="list-item">
-                            <div class="list-item-title">${exercise.name}</div>
-                        </div>
-                    `
-                      )
-                      .join("")}
-                </div>
-            `;
+                    <div class="list-container">
+                        ${this.dataStore.exercises
+                          .map(
+                            (exercise) => `
+                            <div class="list-item">
+                                <div class="list-item-title">${exercise.name}</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
         }
 
         loadHistory() {
@@ -1397,33 +1396,33 @@
 
           if (recentWorkouts.length === 0) {
             container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-title">No Workouts Yet</div>
-                        <p>Complete your first workout to see history</p>
-                    </div>
-                `;
+                        <div class="empty-state">
+                            <div class="empty-state-title">No Workouts Yet</div>
+                            <p>Complete your first workout to see history</p>
+                        </div>
+                    `;
             return;
           }
 
           container.innerHTML = recentWorkouts
             .map(
               (workout) => `
-                <div class="section-title">${this.formatDate(
-                  workout.date
-                )}</div>
-                <div class="list-container">
-                    <div class="list-item">
-                        <div>
-                            <div class="list-item-title">${this.dataStore.getWorkoutName(
-                              workout.workoutId
-                            )}</div>
-                            <div class="list-item-subtitle">${
-                              workout.exercises.size
-                            } exercises completed</div>
+                    <div class="section-title">${this.formatDate(
+                      workout.date
+                    )}</div>
+                    <div class="list-container">
+                        <div class="list-item">
+                            <div>
+                                <div class="list-item-title">${this.dataStore.getWorkoutName(
+                                  workout.workoutId
+                                )}</div>
+                                <div class="list-item-subtitle">${
+                                  workout.exercises.size
+                                } exercises completed</div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `
+                `
             )
             .join("");
         }
@@ -1434,38 +1433,38 @@
           const content = document.getElementById("modalContent");
 
           content.innerHTML = `
-                <div class="modal-header">
-                    <h2 class="modal-title">GitHub Configuration</h2>
-                    <button class="modal-close" onclick="app.closeModal()">Close</button>
-                </div>
-                <form autocomplete="on" onsubmit="event.preventDefault(); app.saveConfig();">
-                    <div class="form-group">
-                        <label class="form-label" for="gistId">Username (Gist ID)</label>
-                        <input type="text" 
-                               class="form-input" 
-                               id="gistId" 
-                               name="username"
-                               autocomplete="username"
-                               placeholder="abc123def456" 
-                               value="${CONFIG.gistId}">
+                    <div class="modal-header">
+                        <h2 class="modal-title">GitHub Configuration</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Close</button>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label" for="githubToken">Password (GitHub Token)</label>
-                        <input type="password" 
-                               class="form-input" 
-                               id="githubToken" 
-                               name="password"
-                               autocomplete="current-password"
-                               placeholder="ghp_xxxxxxxxxxxx" 
-                               value="${CONFIG.githubToken}">
-                    </div>
-                    <button type="submit" class="button-primary">Save Configuration</button>
-                </form>
-                <p style="margin-top: 16px; font-size: 14px; color: #8e8e93;">
-                    Create a new Gist with three files: exercises.json, workouts.json, and records.json.
-                    Each file should contain an empty JSON object or array.
-                </p>
-            `;
+                    <form autocomplete="on" onsubmit="event.preventDefault(); app.saveConfig();">
+                        <div class="form-group">
+                            <label class="form-label" for="gistId">Username (Gist ID)</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   id="gistId" 
+                                   name="username"
+                                   autocomplete="username"
+                                   placeholder="abc123def456" 
+                                   value="${CONFIG.gistId}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="githubToken">Password (GitHub Token)</label>
+                            <input type="password" 
+                                   class="form-input" 
+                                   id="githubToken" 
+                                   name="password"
+                                   autocomplete="current-password"
+                                   placeholder="ghp_xxxxxxxxxxxx" 
+                                   value="${CONFIG.githubToken}">
+                        </div>
+                        <button type="submit" class="button-primary">Save Configuration</button>
+                    </form>
+                    <p style="margin-top: 16px; font-size: 14px; color: #8e8e93;">
+                        Create a new Gist with three files: exercises.json, workouts.json, and records.json.
+                        Each file should contain an empty JSON object or array.
+                    </p>
+                `;
 
           modal.classList.add("show");
         }
@@ -1492,17 +1491,17 @@
           const content = document.getElementById("modalContent");
 
           content.innerHTML = `
-                <div class="modal-header">
-                    <h2 class="modal-title">Add Exercise</h2>
-                    <button class="modal-close" onclick="app.closeModal()">Cancel</button>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Exercise Name</label>
-                    <input type="text" class="form-input" id="exerciseName" 
-                           placeholder="e.g., Bench Press" autocomplete="off">
-                </div>
-                <button class="button-primary" onclick="app.addExercise()">Add Exercise</button>
-            `;
+                    <div class="modal-header">
+                        <h2 class="modal-title">Add Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Exercise Name</label>
+                        <input type="text" class="form-input" id="exerciseName" 
+                               placeholder="e.g., Bench Press" autocomplete="off">
+                    </div>
+                    <button class="button-primary" onclick="app.addExercise()">Add Exercise</button>
+                `;
 
           modal.classList.add("show");
           setTimeout(
@@ -1531,34 +1530,34 @@
           this.tempWorkoutExercises = [];
 
           content.innerHTML = `
-                <div class="modal-header">
-                    <h2 class="modal-title">Create Workout</h2>
-                    <button class="modal-close" onclick="app.closeModal()">Cancel</button>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Workout Name</label>
-                    <input type="text" class="form-input" id="workoutName" 
-                           placeholder="e.g., Push Day" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Exercises</label>
-                    <div id="selectedExercises" style="margin-bottom: 12px; min-height: 40px; padding: 8px; background: #f2f2f7; border-radius: 8px;">
-                        <span style="color: #8e8e93;">No exercises selected</span>
+                    <div class="modal-header">
+                        <h2 class="modal-title">Create Workout</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
                     </div>
-                    <div class="exercise-selector">
-                        ${this.dataStore.exercises
-                          .map(
-                            (exercise) => `
-                            <div class="exercise-option" onclick="app.toggleExerciseSelection('${exercise.id}')">
-                                ${exercise.name}
-                            </div>
-                        `
-                          )
-                          .join("")}
+                    <div class="form-group">
+                        <label class="form-label">Workout Name</label>
+                        <input type="text" class="form-input" id="workoutName" 
+                               placeholder="e.g., Push Day" autocomplete="off">
                     </div>
-                </div>
-                <button class="button-primary" onclick="app.createWorkout()">Create Workout</button>
-            `;
+                    <div class="form-group">
+                        <label class="form-label">Exercises</label>
+                        <div id="selectedExercises" style="margin-bottom: 12px; min-height: 40px; padding: 8px; background: #f2f2f7; border-radius: 8px;">
+                            <span style="color: #8e8e93;">No exercises selected</span>
+                        </div>
+                        <div class="exercise-selector">
+                            ${this.dataStore.exercises
+                              .map(
+                                (exercise) => `
+                                <div class="exercise-option" onclick="app.toggleExerciseSelection('${exercise.id}')">
+                                    ${exercise.name}
+                                </div>
+                            `
+                              )
+                              .join("")}
+                        </div>
+                    </div>
+                    <button class="button-primary" onclick="app.createWorkout()">Create Workout</button>
+                `;
 
           modal.classList.add("show");
           setTimeout(() => document.getElementById("workoutName").focus(), 100);
