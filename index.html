@@ -136,6 +136,20 @@
         background: #0056cc;
       }
 
+      .restore-btn {
+        background: #007aff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .restore-btn:hover {
+        background: #0056cc;
+      }
+
       .delete-btn {
         background: #ff3b30;
         color: white;
@@ -654,6 +668,22 @@
       </div>
     </div>
 
+    <div id="workoutDetailsView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.showView('historyView')">
+            ‹ Back
+          </button>
+          <div class="header-title" id="workoutDetailsTitle">Workout Details</div>
+          <div></div>
+        </div>
+      </div>
+
+      <div id="workoutDetailsContent" style="padding: 20px 0">
+        <!-- Workout details will be populated here -->
+      </div>
+    </div>
+
     <!-- Modals -->
     <div id="modal" class="modal">
       <div class="modal-content" id="modalContent">
@@ -970,6 +1000,25 @@
             return true;
           }
           return false;
+        }
+
+        getDeletedExercises() {
+          return this.exercises.filter(ex => ex.isDeleted);
+        }
+
+        restoreExercise(exerciseId) {
+          const exercise = this.exerciseMap.get(exerciseId);
+          if (exercise && exercise.isDeleted) {
+            exercise.isDeleted = false;
+            this.saveToLocalStorage();
+            return true;
+          }
+          return false;
+        }
+
+        getWorkoutRecords(date, workoutId) {
+          const allRecords = [...this.records, ...this.pendingRecords];
+          return allRecords.filter(r => r.date === date && r.workoutId === workoutId);
         }
 
         getRecentWorkouts(limit = 30) {
@@ -1478,6 +1527,7 @@
 
         loadExercisesList() {
           const container = document.getElementById("exercisesList");
+          const deletedExercises = this.dataStore.getDeletedExercises();
 
           container.innerHTML = `
                     <div class="list-container">
@@ -1496,6 +1546,11 @@
                           )
                           .join("")}
                     </div>
+                    ${deletedExercises.length > 0 ? `
+                        <button class="button-secondary" onclick="app.showDeletedExercisesModal()" style="margin-top: 16px;">
+                            Show Deleted Exercises (${deletedExercises.length})
+                        </button>
+                    ` : ''}
                 `;
         }
 
@@ -1520,7 +1575,7 @@
                       workout.date
                     )}</div>
                     <div class="list-container">
-                        <div class="list-item">
+                        <div class="list-item" onclick="app.showWorkoutDetails('${workout.date}', '${workout.workoutId}')">
                             <div>
                                 <div class="list-item-title">${this.dataStore.getWorkoutName(
                                   workout.workoutId
@@ -1529,11 +1584,58 @@
                                   workout.exercises.size
                                 } exercises completed</div>
                             </div>
+                            <div class="list-item-arrow">›</div>
                         </div>
                     </div>
                 `
             )
             .join("");
+        }
+
+        showWorkoutDetails(date, workoutId) {
+          const workoutRecords = this.dataStore.getWorkoutRecords(date, workoutId);
+          const workoutName = this.dataStore.getWorkoutName(workoutId);
+          
+          // Update title
+          document.getElementById("workoutDetailsTitle").textContent = workoutName;
+          
+          // Group records by exercise
+          const exerciseGroups = {};
+          workoutRecords.forEach(record => {
+            if (!exerciseGroups[record.exerciseId]) {
+              exerciseGroups[record.exerciseId] = [];
+            }
+            exerciseGroups[record.exerciseId].push(record);
+          });
+          
+          const container = document.getElementById("workoutDetailsContent");
+          container.innerHTML = `
+            <div style="padding: 0 20px;">
+              <div class="section-title">${this.formatDate(date)}</div>
+              ${Object.keys(exerciseGroups).map(exerciseId => {
+                const exercise = this.dataStore.exerciseMap.get(exerciseId);
+                const exerciseRecords = exerciseGroups[exerciseId].sort((a, b) => a.set - b.set);
+                const isDeleted = exercise && exercise.isDeleted;
+                const exerciseName = exercise ? exercise.name : 'Unknown Exercise';
+                const displayName = isDeleted ? `${exerciseName} (Deleted)` : exerciseName;
+                const titleClass = isDeleted ? 'style="color: #8e8e93; font-style: italic;"' : '';
+                
+                return `
+                  <div class="list-container" style="margin-bottom: 16px;">
+                    <div class="section-title" ${titleClass}>${displayName}</div>
+                    ${exerciseRecords.map(record => `
+                      <div class="list-item" style="padding: 12px 16px;">
+                        <div class="list-item-title">Set ${record.set}</div>
+                        <div class="list-item-subtitle">${record.weight} lbs × ${record.reps} reps</div>
+                      </div>
+                    `).join('')}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+          
+          this.showView('workoutDetailsView');
         }
 
         // Modal Management
@@ -1675,6 +1777,47 @@
           if (confirm("Delete this exercise? It will be hidden but data preserved.")) {
             this.dataStore.softDeleteExercise(exerciseId);
             this.loadExercisesList();
+          }
+        }
+
+        showDeletedExercisesModal() {
+          const deletedExercises = this.dataStore.getDeletedExercises();
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Deleted Exercises</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Close</button>
+                    </div>
+                    <div class="list-container" style="margin: 0">
+                        ${deletedExercises
+                          .map(
+                            (exercise) => `
+                            <div class="list-item">
+                                <div class="list-item-title">${exercise.name}</div>
+                                <button class="restore-btn" onclick="app.restoreExercise('${exercise.id}')">Restore</button>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
+
+          modal.classList.add("show");
+        }
+
+        restoreExercise(exerciseId) {
+          this.dataStore.restoreExercise(exerciseId);
+          this.loadExercisesList();
+          this.showSyncStatus("Exercise restored", 2000);
+          
+          // Refresh modal content, or close if no more deleted exercises
+          const deletedExercises = this.dataStore.getDeletedExercises();
+          if (deletedExercises.length === 0) {
+            this.closeModal();
+          } else {
+            this.showDeletedExercisesModal();
           }
         }
 
