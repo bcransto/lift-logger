@@ -260,10 +260,42 @@
         border-bottom: none;
       }
 
+      .set-row.read-only {
+        background-color: #f8f8f8;
+      }
+
+      .set-row.read-only.clickable {
+        cursor: pointer;
+      }
+
+      .set-row.read-only.clickable:hover {
+        background-color: #e8e8ed;
+      }
+
+      .set-arrow {
+        color: #c7c7cc;
+        font-size: 18px;
+        margin-left: 8px;
+      }
+
       .set-number {
         color: #8e8e93;
         font-size: 15px;
         width: 40px;
+      }
+
+      .set-display {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        height: 44px;
+        padding: 0 12px;
+      }
+
+      .set-display .set-value {
+        font-size: 17px;
+        font-weight: 600;
+        color: #000;
       }
 
       .set-inputs {
@@ -675,12 +707,29 @@
             ‹ Back
           </button>
           <div class="header-title" id="workoutDetailsTitle">Workout Details</div>
-          <div></div>
+          <div id="workoutDetailsHeaderAction"></div>
         </div>
       </div>
 
       <div id="workoutDetailsContent" style="padding: 20px 0">
         <!-- Workout details will be populated here -->
+      </div>
+    </div>
+
+    <!-- Set Edit View -->
+    <div id="setEditView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.goBackFromSetEdit()">
+            ‹ Back
+          </button>
+          <div class="header-title">Edit Set</div>
+          <div></div>
+        </div>
+      </div>
+
+      <div id="setEditContent" style="padding: 20px 0">
+        <!-- Set edit content will be populated here -->
       </div>
     </div>
 
@@ -901,10 +950,10 @@
           return this.workoutMap.get(workoutId)?.name || "Unknown Workout";
         }
 
-        getLastWorkout(exerciseId) {
+        getLastWorkout(exerciseId, excludeDate = null) {
           const allRecords = [...this.records, ...this.pendingRecords];
           const exerciseRecords = allRecords.filter(
-            (r) => r.exerciseId === exerciseId
+            r => r.exerciseId === exerciseId && (!excludeDate || r.date !== excludeDate)
           );
           if (!exerciseRecords.length) return null;
 
@@ -912,7 +961,7 @@
           exerciseRecords.sort((a, b) => b.date.localeCompare(a.date));
           const lastDate = exerciseRecords[0].date;
 
-          return exerciseRecords.filter((r) => r.date === lastDate);
+          return exerciseRecords.filter(r => r.date === lastDate);
         }
 
         calculatePR(exerciseId) {
@@ -1044,6 +1093,7 @@
 
           return workouts.slice(0, limit);
         }
+
       }
 
       // Main App Class
@@ -1212,6 +1262,7 @@
             date: new Date().toISOString().split("T")[0],
             completedExercises: [],
             addedExercises: [],
+            exerciseSets: {},
           };
 
           this.closeModal();
@@ -1221,8 +1272,7 @@
 
         loadWorkoutExercises() {
           const workout = this.dataStore.workoutMap.get(this.currentWorkout.id);
-          document.getElementById("activeWorkoutTitle").textContent =
-            workout.name;
+          document.getElementById("activeWorkoutTitle").textContent = workout.name;
 
           // Combine original workout exercises with added exercises
           const originalExercises = workout.exercises.map(ex => ({
@@ -1230,7 +1280,7 @@
             isAdded: false
           }));
 
-          const addedExercises = this.currentWorkout.addedExercises.map(exerciseId => ({
+          const addedExercises = (this.currentWorkout.addedExercises || []).map(exerciseId => ({
             exerciseId: exerciseId,
             isAdded: true
           }));
@@ -1249,10 +1299,23 @@
                               this.currentWorkout.completedExercises.includes(
                                 ex.exerciseId
                               );
+                            const hasLoggedSets = this.currentWorkout.exerciseSets[ex.exerciseId] && 
+                                                  this.currentWorkout.exerciseSets[ex.exerciseId].length > 0;
                             const isDeleted = exercise.isDeleted;
                             const exerciseName = isDeleted ? `${exercise.name} (Deleted)` : exercise.name;
                             const itemClass = isDeleted ? "exercise-item deleted" : "exercise-item";
                             const onclick = isDeleted ? "" : `onclick="app.startExercise('${ex.exerciseId}')"`;
+
+                            // Determine status text
+                            let statusText;
+                            if (isCompleted) {
+                              statusText = "Completed";
+                            } else if (hasLoggedSets) {
+                              const setCount = this.currentWorkout.exerciseSets[ex.exerciseId].length;
+                              statusText = `${setCount} set${setCount > 1 ? 's' : ''} logged`;
+                            } else {
+                              statusText = "Not started";
+                            }
 
                             return `
                                 <div class="${itemClass}" ${onclick}>
@@ -1261,11 +1324,7 @@
                                     }"></div>
                                     <div class="exercise-info">
                                         <div class="exercise-name">${exerciseName}</div>
-                                        <div class="exercise-sets">${
-                                          isCompleted
-                                            ? "Completed"
-                                            : "Not started"
-                                        }</div>
+                                        <div class="exercise-sets">${statusText}</div>
                                     </div>
                                 </div>
                             `;
@@ -1329,10 +1388,21 @@
 
         startExercise(exerciseId) {
           this.currentExercise = exerciseId;
-          this.currentSets = [];
+          
+          // Remove from completed exercises if re-entering
+          const completedIndex = this.currentWorkout.completedExercises.indexOf(exerciseId);
+          if (completedIndex > -1) {
+            this.currentWorkout.completedExercises.splice(completedIndex, 1);
+          }
 
           this.showView("exerciseView");
           this.loadExerciseEntry();
+          
+          // Build currentSets using consistent logic (after DOM is ready)
+          this.rebuildCurrentSets();
+          
+          // Update the rendered sets in the DOM
+          document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
         }
 
         loadExerciseEntry() {
@@ -1341,7 +1411,8 @@
 
           const pr = this.dataStore.calculatePR(this.currentExercise);
           const lastWorkout = this.dataStore.getLastWorkout(
-            this.currentExercise
+            this.currentExercise, 
+            this.currentWorkout.date
           );
 
           let html = "";
@@ -1393,15 +1464,10 @@
                     <div id="todaysSets" class="sets-container">
                         ${this.renderCurrentSets()}
                     </div>
-                    <button class="button-secondary" onclick="app.addSet()">+ Add Set</button>
+                    <button class="button-secondary" onclick="app.submitSet()">Submit</button>
                 `;
 
           document.getElementById("exerciseContent").innerHTML = html;
-
-          // Add initial set if none exist
-          if (this.currentSets.length === 0) {
-            this.addSet();
-          }
         }
 
         renderCurrentSets() {
@@ -1409,7 +1475,23 @@
 
           return this.currentSets
             .map(
-              (set, index) => `
+              (set, index) => {
+                const isReadOnly = set.isReadOnly;
+                
+                if (isReadOnly) {
+                  // Render clickable read-only set
+                  return `
+                    <div class="set-row read-only clickable" onclick="app.editSet('${this.currentWorkout.date}', '${this.currentWorkout.id}', '${this.currentExercise}', ${set.setNumber || index + 1}, 'exerciseView')">
+                        <span class="set-number">Set ${index + 1}</span>
+                        <div class="set-display">
+                            <span class="set-value">${set.weight} lbs × ${set.reps}</span>
+                        </div>
+                        <span class="set-arrow">›</span>
+                    </div>
+                  `;
+                } else {
+                  // Render editable set
+                  return `
                     <div class="set-row">
                         <span class="set-number">Set ${index + 1}</span>
                         <div class="set-inputs">
@@ -1423,7 +1505,7 @@
                                        id="weight_${index}" 
                                        placeholder="${set.placeholderWeight || ""}"
                                        value="${set.weight || ""}" 
-                                       onchange="app.updateSet(${index}, 'weight', this.value)" />
+                                       onchange="app.updateSetInput(${index}, 'weight', this.value)" />
                                 <span class="input-label">lbs</span>
                             </div>
                             <div class="input-group">
@@ -1436,19 +1518,22 @@
                                        id="reps_${index}" 
                                        placeholder="${set.placeholderReps || ""}"
                                        value="${set.reps || ""}" 
-                                       onchange="app.updateSet(${index}, 'reps', this.value)" />
+                                       onchange="app.updateSetInput(${index}, 'reps', this.value)" />
                                 <span class="input-label">reps</span>
                             </div>
                         </div>
                     </div>
-                `
+                  `;
+                }
+              }
             )
             .join("");
         }
 
         addSet() {
           const lastWorkout = this.dataStore.getLastWorkout(
-            this.currentExercise
+            this.currentExercise, 
+            this.currentWorkout.date
           );
           const setNumber = this.currentSets.length + 1;
 
@@ -1483,31 +1568,112 @@
           }, 50);
         }
 
-        updateSet(index, field, value) {
+        updateSetInput(index, field, value) {
           this.currentSets[index][field] = value ? parseInt(value) : "";
         }
 
-        saveExercise() {
-          // Filter out empty sets and create records
-          const validSets = this.currentSets.filter(
-            (set) => set.weight && set.reps
-          );
-
-          if (validSets.length === 0) {
-            alert("Please enter at least one set");
+        submitSet() {
+          // Find the current set (last one in currentSets)
+          const currentSetIndex = this.currentSets.length - 1;
+          if (currentSetIndex < 0) {
+            this.addSet();
             return;
           }
 
-          const records = validSets.map((set, index) => ({
+          const currentSet = this.currentSets[currentSetIndex];
+          
+          // Validate that weight and reps are entered
+          if (!currentSet.weight || !currentSet.reps) {
+            alert("Please enter both weight and reps for this set.");
+            return;
+          }
+
+          // Initialize exerciseSets for this exercise if not exists
+          if (!this.currentWorkout.exerciseSets[this.currentExercise]) {
+            this.currentWorkout.exerciseSets[this.currentExercise] = [];
+          }
+
+          // Create record
+          const setNumber = this.currentWorkout.exerciseSets[this.currentExercise].length + 1;
+          const record = {
             date: this.currentWorkout.date,
             workoutId: this.currentWorkout.id,
             exerciseId: this.currentExercise,
-            set: index + 1,
-            weight: set.weight,
-            reps: set.reps,
-          }));
+            set: setNumber,
+            weight: currentSet.weight,
+            reps: currentSet.reps,
+          };
 
-          this.dataStore.addRecords(records);
+          // Save to pending records and workout tracking
+          this.dataStore.addRecords([record]);
+          this.currentWorkout.exerciseSets[this.currentExercise].push(record);
+
+          // Show success message
+          this.showSyncStatus("Set saved", 1500);
+
+          // Rebuild currentSets from exerciseSets (read-only) plus one blank
+          this.rebuildCurrentSets();
+
+          // Re-render the sets container
+          document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
+        }
+
+        rebuildCurrentSets() {
+          // Clear current sets
+          this.currentSets = [];
+          
+          // Add read-only sets from exerciseSets
+          if (this.currentWorkout.exerciseSets[this.currentExercise]) {
+            this.currentWorkout.exerciseSets[this.currentExercise].forEach(record => {
+              this.currentSets.push({
+                weight: record.weight,
+                reps: record.reps,
+                isReadOnly: true,
+                setNumber: record.set
+              });
+            });
+          }
+          
+          // Add one blank editable set
+          this.addBlankSet();
+        }
+
+        addBlankSet() {
+          const lastWorkout = this.dataStore.getLastWorkout(
+            this.currentExercise, 
+            this.currentWorkout.date
+          );
+          const setNumber = this.currentSets.length + 1;
+
+          let placeholderWeight = "";
+          let placeholderReps = "";
+
+          if (lastWorkout && lastWorkout[setNumber - 1]) {
+            placeholderWeight = lastWorkout[setNumber - 1].weight;
+            placeholderReps = lastWorkout[setNumber - 1].reps;
+          } else if (this.currentSets.length > 0) {
+            // Use previous set's values as placeholder
+            const prevSet = this.currentSets[this.currentSets.length - 1];
+            placeholderWeight = prevSet.weight;
+            placeholderReps = prevSet.reps;
+          }
+
+          this.currentSets.push({
+            placeholderWeight,
+            placeholderReps,
+            weight: "",
+            reps: "",
+            isReadOnly: false
+          });
+        }
+
+        saveExercise() {
+          // Check if any sets have been logged for this exercise
+          if (!this.currentWorkout.exerciseSets[this.currentExercise] || 
+              this.currentWorkout.exerciseSets[this.currentExercise].length === 0) {
+            alert("Please submit at least one set before marking as complete");
+            return;
+          }
 
           // Mark exercise as completed
           if (
@@ -1670,6 +1836,9 @@
           // Update title
           document.getElementById("workoutDetailsTitle").textContent = workoutName;
           
+          // Clear header action
+          document.getElementById("workoutDetailsHeaderAction").innerHTML = "";
+          
           // Group records by exercise
           const exerciseGroups = {};
           workoutRecords.forEach(record => {
@@ -1695,9 +1864,12 @@
                   <div class="list-container" style="margin-bottom: 16px;">
                     <div class="section-title" ${titleClass}>${displayName}</div>
                     ${exerciseRecords.map(record => `
-                      <div class="list-item" style="padding: 12px 16px;">
-                        <div class="list-item-title">Set ${record.set}</div>
-                        <div class="list-item-subtitle">${record.weight} lbs × ${record.reps} reps</div>
+                      <div class="list-item" style="padding: 12px 16px; cursor: pointer;" onclick="app.editSet('${record.date}', '${record.workoutId}', '${record.exerciseId}', ${record.set}, 'workoutDetailsView')">
+                        <div>
+                          <div class="list-item-title">Set ${record.set}</div>
+                          <div class="list-item-subtitle">${record.weight} lbs × ${record.reps} reps</div>
+                        </div>
+                        <span style="color: #c7c7cc;">›</span>
                       </div>
                     `).join('')}
                   </div>
@@ -1707,6 +1879,309 @@
           `;
           
           this.showView('workoutDetailsView');
+        }
+
+        editSet(date, workoutId, exerciseId, setNumber, returnTo = null) {
+          // Try to find the record in both regular records and pending records
+          let record = this.dataStore.records.find(r => 
+            r.date === date && 
+            r.workoutId === workoutId && 
+            r.exerciseId === exerciseId && 
+            r.set === setNumber
+          );
+          
+          let isCurrentWorkout = false;
+          
+          // If not found in regular records, check pending records (current workout)
+          if (!record) {
+            record = this.dataStore.pendingRecords.find(r => 
+              r.date === date && 
+              r.workoutId === workoutId && 
+              r.exerciseId === exerciseId && 
+              r.set === setNumber
+            );
+            isCurrentWorkout = true;
+          }
+          
+          if (!record) {
+            alert("Set not found");
+            return;
+          }
+          
+          // Store the current record for editing and context
+          this.currentEditRecord = { ...record };
+          this.currentEditRecord.isCurrentWorkout = isCurrentWorkout;
+          
+          // Determine return context
+          if (returnTo) {
+            this.currentEditRecord.returnTo = returnTo;
+          } else {
+            // Auto-detect based on current workout context
+            this.currentEditRecord.returnTo = isCurrentWorkout ? 'exerciseView' : 'workoutDetailsView';
+          }
+          
+          const exercise = this.dataStore.exerciseMap.get(exerciseId);
+          const exerciseName = exercise ? exercise.name : 'Unknown Exercise';
+          
+          // Build the edit form
+          const content = document.getElementById("setEditContent");
+          content.innerHTML = `
+            <div style="padding: 0 20px;">
+              <div class="info-section">
+                <div class="info-row">
+                  <span class="info-label">Exercise</span>
+                  <span class="info-value">${exerciseName}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Date</span>
+                  <span class="info-value">${this.formatDate(date)}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Set Number</span>
+                  <span class="info-value">${setNumber}</span>
+                </div>
+              </div>
+              
+              <div class="sets-container">
+                <div class="set-row">
+                  <span class="set-number">Weight</span>
+                  <div class="set-inputs">
+                    <div class="input-group">
+                      <input type="number" 
+                             inputmode="numeric" 
+                             pattern="[0-9]*"
+                             autocomplete="off"
+                             min="0"
+                             enterkeyhint="done"
+                             id="editWeight" 
+                             value="${record.weight}" />
+                      <span class="input-label">lbs</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <span class="set-number">Reps</span>
+                  <div class="set-inputs">
+                    <div class="input-group">
+                      <input type="number" 
+                             inputmode="numeric" 
+                             pattern="[0-9]*"
+                             autocomplete="off"
+                             min="0"
+                             enterkeyhint="done"
+                             id="editReps" 
+                             value="${record.reps}" />
+                      <span class="input-label">reps</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <button class="button-primary" onclick="app.updateSet()">Save Changes</button>
+              <button class="button-secondary" onclick="app.deleteSet()" style="color: #ff3b30; margin-top: 16px;">Delete Set</button>
+            </div>
+          `;
+          
+          this.showView('setEditView');
+        }
+
+        goBackFromSetEdit() {
+          if (this.currentEditRecord && this.currentEditRecord.returnTo) {
+            // Return to the specified view
+            this.showView(this.currentEditRecord.returnTo);
+          } else {
+            // Fallback to workout details view
+            this.showView('workoutDetailsView');
+          }
+        }
+
+        async updateSet() {
+          const weightInput = document.getElementById('editWeight');
+          const repsInput = document.getElementById('editReps');
+          
+          const newWeight = parseInt(weightInput.value);
+          const newReps = parseInt(repsInput.value);
+          
+          if (!newWeight || !newReps) {
+            alert("Please enter both weight and reps");
+            return;
+          }
+          
+          // Find and update the record in the appropriate array
+          let recordIndex = -1;
+          let recordsArray;
+          
+          if (this.currentEditRecord.isCurrentWorkout) {
+            recordsArray = this.dataStore.pendingRecords;
+            recordIndex = recordsArray.findIndex(r => 
+              r.date === this.currentEditRecord.date && 
+              r.workoutId === this.currentEditRecord.workoutId && 
+              r.exerciseId === this.currentEditRecord.exerciseId && 
+              r.set === this.currentEditRecord.set
+            );
+          } else {
+            recordsArray = this.dataStore.records;
+            recordIndex = recordsArray.findIndex(r => 
+              r.date === this.currentEditRecord.date && 
+              r.workoutId === this.currentEditRecord.workoutId && 
+              r.exerciseId === this.currentEditRecord.exerciseId && 
+              r.set === this.currentEditRecord.set
+            );
+          }
+          
+          if (recordIndex === -1) {
+            alert("Record not found");
+            return;
+          }
+          
+          // Update the record
+          recordsArray[recordIndex].weight = newWeight;
+          recordsArray[recordIndex].reps = newReps;
+          
+          // If updating current workout, also update currentWorkout.exerciseSets
+          if (this.currentEditRecord.isCurrentWorkout) {
+            const exerciseSetIndex = this.currentWorkout.exerciseSets[this.currentEditRecord.exerciseId].findIndex(record =>
+              record.set === this.currentEditRecord.set
+            );
+            if (exerciseSetIndex !== -1) {
+              this.currentWorkout.exerciseSets[this.currentEditRecord.exerciseId][exerciseSetIndex].weight = newWeight;
+              this.currentWorkout.exerciseSets[this.currentEditRecord.exerciseId][exerciseSetIndex].reps = newReps;
+            }
+          }
+          
+          // Save to localStorage
+          this.dataStore.saveToLocalStorage();
+          
+          // Try to sync
+          if (CONFIG.githubToken && CONFIG.gistId) {
+            try {
+              this.showSyncStatus("Saving changes...");
+              await this.dataStore.syncToGist();
+              this.showSyncStatus("Changes saved!", 2000);
+            } catch (error) {
+              console.error("Failed to sync:", error);
+              this.showSyncStatus("Saved locally (sync failed)", 3000);
+            }
+          } else {
+            this.showSyncStatus("Changes saved locally", 2000);
+          }
+          
+          // Navigate back based on context
+          if (this.currentEditRecord.returnTo === 'exerciseView') {
+            // Return to exercise entry view and refresh
+            this.showView("exerciseView");
+            this.loadExerciseEntry();
+            // Rebuild and refresh the sets display
+            this.rebuildCurrentSets();
+            document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
+          } else {
+            // Go back to workout details and refresh the data
+            this.showWorkoutDetails(
+              this.currentEditRecord.date, 
+              this.currentEditRecord.workoutId
+            );
+          }
+        }
+
+        async deleteSet() {
+          if (!confirm("Are you sure you want to delete this set?")) {
+            return;
+          }
+          
+          // Find and remove the record from the appropriate array
+          let recordIndex = -1;
+          let recordsArray;
+          
+          if (this.currentEditRecord.isCurrentWorkout) {
+            recordsArray = this.dataStore.pendingRecords;
+            recordIndex = recordsArray.findIndex(r => 
+              r.date === this.currentEditRecord.date && 
+              r.workoutId === this.currentEditRecord.workoutId && 
+              r.exerciseId === this.currentEditRecord.exerciseId && 
+              r.set === this.currentEditRecord.set
+            );
+          } else {
+            recordsArray = this.dataStore.records;
+            recordIndex = recordsArray.findIndex(r => 
+              r.date === this.currentEditRecord.date && 
+              r.workoutId === this.currentEditRecord.workoutId && 
+              r.exerciseId === this.currentEditRecord.exerciseId && 
+              r.set === this.currentEditRecord.set
+            );
+          }
+          
+          if (recordIndex === -1) {
+            alert("Record not found");
+            return;
+          }
+          
+          // Remove the record
+          recordsArray.splice(recordIndex, 1);
+          
+          // If deleting from current workout, also remove from currentWorkout.exerciseSets
+          if (this.currentEditRecord.isCurrentWorkout) {
+            const exerciseSetIndex = this.currentWorkout.exerciseSets[this.currentEditRecord.exerciseId].findIndex(record =>
+              record.set === this.currentEditRecord.set
+            );
+            if (exerciseSetIndex !== -1) {
+              this.currentWorkout.exerciseSets[this.currentEditRecord.exerciseId].splice(exerciseSetIndex, 1);
+            }
+          }
+          
+          // Renumber remaining sets for this exercise on this date/workout
+          const remainingSets = recordsArray.filter(r => 
+            r.date === this.currentEditRecord.date && 
+            r.workoutId === this.currentEditRecord.workoutId && 
+            r.exerciseId === this.currentEditRecord.exerciseId &&
+            r.set > this.currentEditRecord.set
+          );
+          
+          // Decrease set numbers by 1 for all sets that came after the deleted one
+          remainingSets.forEach(record => {
+            record.set = record.set - 1;
+          });
+          
+          // Also renumber in currentWorkout.exerciseSets if current workout
+          if (this.currentEditRecord.isCurrentWorkout) {
+            this.currentWorkout.exerciseSets[this.currentEditRecord.exerciseId].forEach(record => {
+              if (record.set > this.currentEditRecord.set) {
+                record.set = record.set - 1;
+              }
+            });
+          }
+          
+          // Save to localStorage
+          this.dataStore.saveToLocalStorage();
+          
+          // Try to sync
+          if (CONFIG.githubToken && CONFIG.gistId) {
+            try {
+              this.showSyncStatus("Deleting set...");
+              await this.dataStore.syncToGist();
+              this.showSyncStatus("Set deleted!", 2000);
+            } catch (error) {
+              console.error("Failed to sync:", error);
+              this.showSyncStatus("Deleted locally (sync failed)", 3000);
+            }
+          } else {
+            this.showSyncStatus("Set deleted locally", 2000);
+          }
+          
+          // Navigate back based on context
+          if (this.currentEditRecord.returnTo === 'exerciseView') {
+            // Return to exercise entry view and refresh
+            this.showView("exerciseView");
+            this.loadExerciseEntry();
+            // Rebuild and refresh the sets display
+            this.rebuildCurrentSets();
+            document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
+          } else {
+            // Go back to workout details and refresh the data
+            this.showWorkoutDetails(
+              this.currentEditRecord.date, 
+              this.currentEditRecord.workoutId
+            );
+          }
         }
 
         // Modal Management
