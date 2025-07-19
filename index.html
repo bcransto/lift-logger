@@ -646,22 +646,7 @@
                 const pendingData = JSON.parse(pending);
                 this.pendingRecords = pendingData.pendingRecords || [];
                 this.lastSyncTime = pendingData.lastSyncTime;
-                this.currentWorkout = pendingData.currentWorkout || null;
             }
-        }
-
-        getCurrentWorkout() {
-            return this.currentWorkout;
-        }
-
-        setCurrentWorkout(workout) {
-            this.currentWorkout = workout;
-            this.saveToLocalStorage();
-        }
-
-        clearCurrentWorkout() {
-            this.currentWorkout = null;
-            this.saveToLocalStorage();
         }
 
         saveToLocalStorage() {
@@ -673,8 +658,7 @@
 
             localStorage.setItem('weightTracker_pending', JSON.stringify({
                 pendingRecords: this.pendingRecords,
-                lastSyncTime: this.lastSyncTime,
-                currentWorkout: this.currentWorkout
+                lastSyncTime: this.lastSyncTime
             }));
         }
 
@@ -876,37 +860,10 @@
             await this.dataStore.initialize();
             this.updateConfigStatus();
             
-            // Restore current workout if exists
-            const savedWorkout = this.dataStore.getCurrentWorkout();
-            if (savedWorkout) {
-                this.currentWorkout = savedWorkout;
-            }
-            
-            // Update home button based on workout state
-            this.updateHomeButton();
-            
             // Don't add default data - let it sync from Gist
             // if (this.dataStore.exercises.length === 0) {
             //     this.setupInitialData();
             // }
-        }
-
-        updateHomeButton() {
-            const button = document.querySelector('#homeView .button-primary');
-            if (button) {
-                if (this.currentWorkout) {
-                    button.textContent = 'Continue Workout';
-                    button.onclick = () => this.continueWorkout();
-                } else {
-                    button.textContent = 'Start Workout';
-                    button.onclick = () => this.showWorkoutSelect();
-                }
-            }
-        }
-
-        continueWorkout() {
-            this.showView('workoutView');
-            this.loadWorkoutExercises();
         }
 
         setupInitialData() {
@@ -939,11 +896,6 @@
                 view.classList.remove('active');
             });
             document.getElementById(viewId).classList.add('active');
-            
-            // Update home button when returning to home
-            if (viewId === 'homeView') {
-                this.updateHomeButton();
-            }
             
             // Load view-specific content
             switch(viewId) {
@@ -1037,13 +989,9 @@
                 completedExercises: []
             };
             
-            // Save to dataStore so it persists
-            this.dataStore.setCurrentWorkout(this.currentWorkout);
-            
             this.closeModal();
             this.showView('workoutView');
             this.loadWorkoutExercises();
-            this.updateHomeButton();
         }
 
         loadWorkoutExercises() {
@@ -1219,9 +1167,6 @@
                 this.currentWorkout.completedExercises.push(this.currentExercise);
             }
             
-            // Update saved workout state
-            this.dataStore.setCurrentWorkout(this.currentWorkout);
-            
             this.backToWorkout();
         }
 
@@ -1237,9 +1182,7 @@
                 }
             }
             this.currentWorkout = null;
-            this.dataStore.clearCurrentWorkout();
             this.showView('homeView');
-            this.updateHomeButton();
         }
 
         async finishWorkout() {
@@ -1266,9 +1209,7 @@
             }
             
             this.currentWorkout = null;
-            this.dataStore.clearCurrentWorkout();
             this.showView('homeView');
-            this.updateHomeButton();
         }
 
         // List Management
