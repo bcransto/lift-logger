@@ -1414,21 +1414,29 @@
                         <span class="set-number">Set ${index + 1}</span>
                         <div class="set-inputs">
                             <div class="input-group">
-                                <input type="number" id="weight_${index}" placeholder="${
-                set.placeholderWeight || ""
-              }"
-                                       value="${
-                                         set.weight || ""
-                                       }" onchange="app.updateSet(${index}, 'weight', this.value)" />
+                                <input type="number" 
+                                       inputmode="numeric" 
+                                       pattern="[0-9]*"
+                                       autocomplete="off"
+                                       min="0"
+                                       enterkeyhint="done"
+                                       id="weight_${index}" 
+                                       placeholder="${set.placeholderWeight || ""}"
+                                       value="${set.weight || ""}" 
+                                       onchange="app.updateSet(${index}, 'weight', this.value)" />
                                 <span class="input-label">lbs</span>
                             </div>
                             <div class="input-group">
-                                <input type="number" id="reps_${index}" placeholder="${
-                set.placeholderReps || ""
-              }"
-                                       value="${
-                                         set.reps || ""
-                                       }" onchange="app.updateSet(${index}, 'reps', this.value)" />
+                                <input type="number" 
+                                       inputmode="numeric" 
+                                       pattern="[0-9]*"
+                                       autocomplete="off"
+                                       min="0"
+                                       enterkeyhint="done"
+                                       id="reps_${index}" 
+                                       placeholder="${set.placeholderReps || ""}"
+                                       value="${set.reps || ""}" 
+                                       onchange="app.updateSet(${index}, 'reps', this.value)" />
                                 <span class="input-label">reps</span>
                             </div>
                         </div>
