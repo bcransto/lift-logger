@@ -120,6 +120,37 @@
         font-size: 20px;
       }
 
+      /* Delete button */
+      .delete-btn {
+        background: #ff3b30;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 8px;
+      }
+
+      .delete-btn:hover {
+        background: #d70015;
+      }
+
+      /* Deleted exercises */
+      .exercise-item.deleted {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .exercise-item.deleted .exercise-name {
+        color: #8e8e93;
+        font-style: italic;
+      }
+
       .button-primary {
         background: #007aff;
         color: #fff;
@@ -907,6 +938,16 @@
           this.saveToLocalStorage();
         }
 
+        softDeleteExercise(exerciseId) {
+          const exercise = this.exerciseMap.get(exerciseId);
+          if (exercise) {
+            exercise.isDeleted = true;
+            this.saveToLocalStorage();
+            return true;
+          }
+          return false;
+        }
+
         getRecentWorkouts(limit = 30) {
           const allRecords = [...this.records, ...this.pendingRecords];
 
@@ -1121,18 +1162,18 @@
                               this.currentWorkout.completedExercises.includes(
                                 ex.exerciseId
                               );
+                            const isDeleted = exercise.isDeleted;
+                            const exerciseName = isDeleted ? `${exercise.name} (Deleted)` : exercise.name;
+                            const itemClass = isDeleted ? "exercise-item deleted" : "exercise-item";
+                            const onclick = isDeleted ? "" : `onclick="app.startExercise('${ex.exerciseId}')"`;
 
                             return `
-                                <div class="exercise-item" onclick="app.startExercise('${
-                                  ex.exerciseId
-                                }')">
+                                <div class="${itemClass}" ${onclick}>
                                     <div class="exercise-check ${
                                       isCompleted ? "completed" : ""
                                     }"></div>
                                     <div class="exercise-info">
-                                        <div class="exercise-name">${
-                                          exercise.name
-                                        }</div>
+                                        <div class="exercise-name">${exerciseName}</div>
                                         <div class="exercise-sets">${
                                           isCompleted
                                             ? "Completed"
@@ -1417,10 +1458,12 @@
           container.innerHTML = `
                     <div class="list-container">
                         ${this.dataStore.exercises
+                          .filter(ex => !ex.isDeleted)
                           .map(
                             (exercise) => `
                             <div class="list-item">
                                 <div class="list-item-title">${exercise.name}</div>
+                                <button class="delete-btn" onclick="app.deleteExercise('${exercise.id}')">×</button>
                             </div>
                         `
                           )
@@ -1562,6 +1605,13 @@
           this.showSyncStatus("Exercise added", 2000);
         }
 
+        deleteExercise(exerciseId) {
+          if (confirm("Delete this exercise? It will be hidden but data preserved.")) {
+            this.dataStore.softDeleteExercise(exerciseId);
+            this.loadExercisesList();
+          }
+        }
+
         showAddWorkoutModal() {
           const modal = document.getElementById("modal");
           const content = document.getElementById("modalContent");
@@ -1585,6 +1635,7 @@
                         </div>
                         <div class="exercise-selector">
                             ${this.dataStore.exercises
+                              .filter(ex => !ex.isDeleted)
                               .map(
                                 (exercise) => `
                                 <div class="exercise-option" onclick="app.toggleExerciseSelection('${exercise.id}')">
