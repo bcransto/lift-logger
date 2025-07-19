@@ -1,0 +1,604 @@
+{
+  "records": [
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_3",
+      "set": 1,
+      "weight": 165,
+      "reps": 8
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_23",
+      "set": 1,
+      "weight": 140,
+      "reps": 12
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_22",
+      "set": 1,
+      "weight": 148,
+      "reps": 8
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_15",
+      "set": 1,
+      "weight": 143,
+      "reps": 11
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_13",
+      "set": 1,
+      "weight": 60,
+      "reps": 8
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_9",
+      "set": 1,
+      "weight": 45,
+      "reps": 11
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_2",
+      "set": 1,
+      "weight": 35,
+      "reps": 11
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_20",
+      "set": 1,
+      "weight": -40,
+      "reps": 8
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_10",
+      "set": 1,
+      "weight": 22,
+      "reps": 12
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_8",
+      "set": 1,
+      "weight": 30,
+      "reps": 9
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_4",
+      "set": 1,
+      "weight": 25,
+      "reps": 13
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_19",
+      "set": 1,
+      "weight": 16,
+      "reps": 12
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_1",
+      "set": 1,
+      "weight": 21,
+      "reps": 15
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_16",
+      "set": 1,
+      "weight": 220,
+      "reps": 9
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_6",
+      "set": 1,
+      "weight": 200,
+      "reps": 10
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_17",
+      "set": 1,
+      "weight": 180,
+      "reps": 10
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_18",
+      "set": 1,
+      "weight": 150,
+      "reps": 12
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_21",
+      "set": 1,
+      "weight": 140,
+      "reps": 10
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_5",
+      "set": 1,
+      "weight": 70,
+      "reps": 8
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_12",
+      "set": 1,
+      "weight": 70,
+      "reps": 12
+    },
+    {
+      "date": "2024-08-31",
+      "workoutId": "workout_6",
+      "exerciseId": "ex_24",
+      "set": 1,
+      "weight": 50,
+      "reps": 8
+    },
+    {
+      "date": "2025-06-27",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_23",
+      "set": 1,
+      "weight": 90,
+      "reps": 8
+    },
+    {
+      "date": "2025-06-27",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_8",
+      "set": 1,
+      "weight": 25,
+      "reps": 8
+    },
+    {
+      "date": "2025-06-27",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_4",
+      "set": 1,
+      "weight": 12,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-27",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_7",
+      "set": 1,
+      "weight": 60,
+      "reps": 8
+    },
+    {
+      "date": "2025-06-28",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_14",
+      "set": 1,
+      "weight": 90,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-28",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_15",
+      "set": 1,
+      "weight": 143,
+      "reps": 8
+    },
+    {
+      "date": "2025-06-28",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_20",
+      "set": 1,
+      "weight": 60,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-28",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_2",
+      "set": 1,
+      "weight": 30,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-28",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_10",
+      "set": 1,
+      "weight": 17,
+      "reps": 12
+    },
+    {
+      "date": "2025-06-29",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_21",
+      "set": 1,
+      "weight": 70,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-29",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_11",
+      "set": 1,
+      "weight": 100,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-29",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_17",
+      "set": 1,
+      "weight": 100,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-29",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_1",
+      "set": 1,
+      "weight": 22,
+      "reps": 12
+    },
+    {
+      "date": "2025-06-30",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_5",
+      "set": 1,
+      "weight": 20,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-30",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_6",
+      "set": 1,
+      "weight": 140,
+      "reps": 15
+    },
+    {
+      "date": "2025-06-30",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_24",
+      "set": 1,
+      "weight": 40,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-30",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_12",
+      "set": 1,
+      "weight": 50,
+      "reps": 10
+    },
+    {
+      "date": "2025-06-30",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_1",
+      "set": 1,
+      "weight": 22,
+      "reps": 12
+    },
+    {
+      "date": "2025-07-01",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_3",
+      "set": 1,
+      "weight": 145,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-01",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_22",
+      "set": 1,
+      "weight": 143,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-01",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_2",
+      "set": 1,
+      "weight": 30,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-01",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_7",
+      "set": 1,
+      "weight": 60,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-03",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_23",
+      "set": 1,
+      "weight": 130,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-03",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_8",
+      "set": 1,
+      "weight": 25,
+      "reps": 12
+    },
+    {
+      "date": "2025-07-03",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_4",
+      "set": 1,
+      "weight": 25,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-03",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_19",
+      "set": 1,
+      "weight": 11,
+      "reps": 12
+    },
+    {
+      "date": "2025-07-03",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_7",
+      "set": 1,
+      "weight": -50,
+      "reps": 9
+    },
+    {
+      "date": "2025-07-04",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_11",
+      "set": 1,
+      "weight": 115,
+      "reps": 11
+    },
+    {
+      "date": "2025-07-04",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_6",
+      "set": 1,
+      "weight": 200,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-04",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_17",
+      "set": 1,
+      "weight": 160,
+      "reps": 9
+    },
+    {
+      "date": "2025-07-04",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_16",
+      "set": 1,
+      "weight": 200,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-04",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_1",
+      "set": 1,
+      "weight": 22,
+      "reps": 15
+    },
+    {
+      "date": "2025-07-07",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_3",
+      "set": 1,
+      "weight": 145,
+      "reps": 9
+    },
+    {
+      "date": "2025-07-07",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_22",
+      "set": 1,
+      "weight": 143,
+      "reps": 12
+    },
+    {
+      "date": "2025-07-07",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_2",
+      "set": 1,
+      "weight": 35,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-07",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_7",
+      "set": 1,
+      "weight": -50,
+      "reps": 12
+    },
+    {
+      "date": "2025-07-07",
+      "workoutId": "workout_5",
+      "exerciseId": "ex_10",
+      "set": 1,
+      "weight": 22,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-09",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_5",
+      "set": 1,
+      "weight": 40,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-09",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_6",
+      "set": 1,
+      "weight": 200,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-09",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_24",
+      "set": 1,
+      "weight": 40,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-09",
+      "workoutId": "workout_1",
+      "exerciseId": "ex_12",
+      "set": 1,
+      "weight": 70,
+      "reps": 11
+    },
+    {
+      "date": "2025-07-11",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_14",
+      "set": 1,
+      "weight": 115,
+      "reps": 10
+    },
+    {
+      "date": "2025-07-11",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_15",
+      "set": 1,
+      "weight": 131,
+      "reps": 11
+    },
+    {
+      "date": "2025-07-11",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_20",
+      "set": 1,
+      "weight": -60,
+      "reps": 11
+    },
+    {
+      "date": "2025-07-11",
+      "workoutId": "workout_4",
+      "exerciseId": "ex_2",
+      "set": 1,
+      "weight": 35,
+      "reps": 9
+    },
+    {
+      "date": "2025-07-12",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_9",
+      "set": 1,
+      "weight": 45,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-12",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_8",
+      "set": 1,
+      "weight": 30,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-12",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_4",
+      "set": 1,
+      "weight": 25,
+      "reps": 9
+    },
+    {
+      "date": "2025-07-12",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_19",
+      "set": 1,
+      "weight": 16,
+      "reps": 8
+    },
+    {
+      "date": "2025-07-12",
+      "workoutId": "workout_3",
+      "exerciseId": "ex_7",
+      "set": 1,
+      "weight": -40,
+      "reps": 9
+    },
+    {
+      "date": "2025-07-17",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_11",
+      "set": 1,
+      "weight": 135,
+      "reps": 7
+    },
+    {
+      "date": "2025-07-17",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_6",
+      "set": 1,
+      "weight": 200,
+      "reps": 11
+    },
+    {
+      "date": "2025-07-17",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_17",
+      "set": 1,
+      "weight": 160,
+      "reps": 12
+    },
+    {
+      "date": "2025-07-17",
+      "workoutId": "workout_2",
+      "exerciseId": "ex_16",
+      "set": 1,
+      "weight": 200,
+      "reps": 11
+    }
+  ]
+}
