@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <title>Lift Logger</title>
+    <title>Weight Tracker</title>
     <style>
         * {
             box-sizing: border-box;
@@ -459,7 +459,7 @@
         <div class="header">
             <div class="header-content">
                 <div></div>
-                <div class="header-title">Lift Logger</div>
+                <div class="header-title">Weight Tracker</div>
                 <button class="header-action" onclick="app.sync()">Sync</button>
             </div>
         </div>
@@ -699,6 +699,12 @@
             }
 
             async syncToGist() {
+                // SAFETY CHECK: Don't sync if we have no data
+                if (this.exercises.length === 0 && this.workouts.length === 0 && this.records.length === 0 && this.pendingRecords.length === 0) {
+                    console.warn('Refusing to sync - no data to upload');
+                    throw new Error('No data to sync. Please refresh to load from Gist first.');
+                }
+
                 // Merge pending records
                 this.records = [...this.records, ...this.pendingRecords];
                 this.pendingRecords = [];
@@ -849,10 +855,10 @@
                 await this.dataStore.initialize();
                 this.updateConfigStatus();
                 
-                // Check if we have data, if not show initial setup
-                if (this.dataStore.exercises.length === 0) {
-                    this.setupInitialData();
-                }
+                // Don't add default data - let it sync from Gist
+                // if (this.dataStore.exercises.length === 0) {
+                //     this.setupInitialData();
+                // }
             }
 
             setupInitialData() {
@@ -918,11 +924,24 @@
                 
                 try {
                     this.showSyncStatus('Syncing...');
-                    await this.dataStore.syncToGist();
-                    this.showSyncStatus('Synced successfully', 2000);
+                    
+                    // If we have no data locally, sync FROM Gist first
+                    if (this.dataStore.exercises.length === 0 && this.dataStore.workouts.length === 0) {
+                        await this.dataStore.syncFromGist();
+                        this.showSyncStatus('Loaded from GitHub', 2000);
+                        // Refresh any open views
+                        const activeView = document.querySelector('.view.active');
+                        if (activeView && activeView.id !== 'homeView') {
+                            this.showView(activeView.id);
+                        }
+                    } else {
+                        // Otherwise sync TO Gist
+                        await this.dataStore.syncToGist();
+                        this.showSyncStatus('Synced successfully', 2000);
+                    }
                 } catch (error) {
                     console.error('Sync failed:', error);
-                    this.showSyncStatus('Sync failed', 3000);
+                    this.showSyncStatus(error.message || 'Sync failed', 3000);
                 }
             }
 
@@ -1267,17 +1286,29 @@
                         <h2 class="modal-title">GitHub Configuration</h2>
                         <button class="modal-close" onclick="app.closeModal()">Close</button>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">GitHub Personal Access Token</label>
-                        <input type="text" class="form-input" id="githubToken" 
-                               placeholder="ghp_xxxxxxxxxxxx" value="${CONFIG.githubToken}">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Gist ID</label>
-                        <input type="text" class="form-input" id="gistId" 
-                               placeholder="abc123def456" value="${CONFIG.gistId}">
-                    </div>
-                    <button class="button-primary" onclick="app.saveConfig()">Save Configuration</button>
+                    <form autocomplete="on" onsubmit="event.preventDefault(); app.saveConfig();">
+                        <div class="form-group">
+                            <label class="form-label" for="gistId">Username (Gist ID)</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   id="gistId" 
+                                   name="username"
+                                   autocomplete="username"
+                                   placeholder="abc123def456" 
+                                   value="${CONFIG.gistId}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="githubToken">Password (GitHub Token)</label>
+                            <input type="password" 
+                                   class="form-input" 
+                                   id="githubToken" 
+                                   name="password"
+                                   autocomplete="current-password"
+                                   placeholder="ghp_xxxxxxxxxxxx" 
+                                   value="${CONFIG.githubToken}">
+                        </div>
+                        <button type="submit" class="button-primary">Save Configuration</button>
+                    </form>
                     <p style="margin-top: 16px; font-size: 14px; color: #8e8e93;">
                         Create a new Gist with three files: exercises.json, workouts.json, and records.json.
                         Each file should contain an empty JSON object or array.
