@@ -1211,6 +1211,7 @@
             id: workoutId,
             date: new Date().toISOString().split("T")[0],
             completedExercises: [],
+            addedExercises: [],
           };
 
           this.closeModal();
@@ -1223,10 +1224,23 @@
           document.getElementById("activeWorkoutTitle").textContent =
             workout.name;
 
+          // Combine original workout exercises with added exercises
+          const originalExercises = workout.exercises.map(ex => ({
+            exerciseId: ex.exerciseId,
+            isAdded: false
+          }));
+
+          const addedExercises = this.currentWorkout.addedExercises.map(exerciseId => ({
+            exerciseId: exerciseId,
+            isAdded: true
+          }));
+
+          const allExercises = [...originalExercises, ...addedExercises];
+
           const container = document.getElementById("workoutExercises");
           container.innerHTML = `
                     <div class="list-container">
-                        ${workout.exercises
+                        ${allExercises
                           .map((ex) => {
                             const exercise = this.dataStore.exerciseMap.get(
                               ex.exerciseId
@@ -1258,7 +1272,59 @@
                           })
                           .join("")}
                     </div>
+                    <button class="button-secondary" onclick="app.showAddExerciseToWorkout()" style="margin: 16px 20px;">
+                        Add Exercise
+                    </button>
                 `;
+        }
+
+        showAddExerciseToWorkout() {
+          const workout = this.dataStore.workoutMap.get(this.currentWorkout.id);
+          
+          // Get exercise IDs already in workout (template + added)
+          const templateExerciseIds = workout.exercises.map(ex => ex.exerciseId);
+          const addedExerciseIds = this.currentWorkout.addedExercises;
+          const existingExerciseIds = [...templateExerciseIds, ...addedExerciseIds];
+          
+          // Filter available exercises
+          const availableExercises = this.dataStore.exercises.filter(ex => 
+            !ex.isDeleted && !existingExerciseIds.includes(ex.id)
+          );
+
+          if (availableExercises.length === 0) {
+            alert("No more exercises available to add to this workout.");
+            return;
+          }
+
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Add Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="list-container" style="margin: 0">
+                        ${availableExercises
+                          .map(
+                            (exercise) => `
+                            <div class="list-item" onclick="app.addExerciseToWorkout('${exercise.id}')">
+                                <div class="list-item-title">${exercise.name}</div>
+                                <div class="list-item-arrow">›</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
+
+          modal.classList.add("show");
+        }
+
+        addExerciseToWorkout(exerciseId) {
+          this.currentWorkout.addedExercises.push(exerciseId);
+          this.closeModal();
+          this.loadWorkoutExercises();
         }
 
         startExercise(exerciseId) {
@@ -1535,12 +1601,9 @@
                           .filter(ex => !ex.isDeleted)
                           .map(
                             (exercise) => `
-                            <div class="list-item">
+                            <div class="list-item" onclick="app.showEditExerciseModal('${exercise.id}')">
                                 <div class="list-item-title">${exercise.name}</div>
-                                <div>
-                                    <button class="edit-btn" onclick="app.showEditExerciseModal('${exercise.id}')">Edit</button>
-                                    <button class="delete-btn" onclick="app.deleteExercise('${exercise.id}')">×</button>
-                                </div>
+                                <div class="list-item-arrow">›</div>
                             </div>
                         `
                           )
@@ -1738,6 +1801,7 @@
                                value="${exercise.name}" autocomplete="off">
                     </div>
                     <button class="button-primary" onclick="app.saveExerciseEdit()">Save Changes</button>
+                    <button class="button-secondary" style="color: #ff3b30; margin-top: 8px;" onclick="app.deleteExerciseFromModal()">Delete Exercise</button>
                 `;
 
           modal.classList.add("show");
@@ -1778,6 +1842,17 @@
             this.dataStore.softDeleteExercise(exerciseId);
             this.loadExercisesList();
           }
+        }
+
+        deleteExerciseFromModal() {
+          this.closeModal();
+          // Use setTimeout to ensure modal is closed before showing confirm dialog
+          setTimeout(() => {
+            if (confirm("Delete this exercise? It will be hidden but data preserved.")) {
+              this.dataStore.softDeleteExercise(this.editingExerciseId);
+              this.loadExercisesList();
+            }
+          }, 100);
         }
 
         showDeletedExercisesModal() {
