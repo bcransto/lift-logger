@@ -120,7 +120,22 @@
         font-size: 20px;
       }
 
-      /* Delete button */
+      /* Edit and Delete buttons */
+      .edit-btn {
+        background: #007aff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-right: 8px;
+      }
+
+      .edit-btn:hover {
+        background: #0056cc;
+      }
+
       .delete-btn {
         background: #ff3b30;
         color: white;
@@ -133,7 +148,6 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-left: 8px;
       }
 
       .delete-btn:hover {
@@ -919,6 +933,16 @@
           return exercise;
         }
 
+        updateExercise(exerciseId, newName) {
+          const exercise = this.exerciseMap.get(exerciseId);
+          if (exercise) {
+            exercise.name = newName;
+            this.saveToLocalStorage();
+            return true;
+          }
+          return false;
+        }
+
         addWorkout(name, exercises) {
           const workout = {
             id: `workout_${Date.now()}_${Math.random()
@@ -1463,7 +1487,10 @@
                             (exercise) => `
                             <div class="list-item">
                                 <div class="list-item-title">${exercise.name}</div>
-                                <button class="delete-btn" onclick="app.deleteExercise('${exercise.id}')">×</button>
+                                <div>
+                                    <button class="edit-btn" onclick="app.showEditExerciseModal('${exercise.id}')">Edit</button>
+                                    <button class="delete-btn" onclick="app.deleteExercise('${exercise.id}')">×</button>
+                                </div>
                             </div>
                         `
                           )
@@ -1592,6 +1619,32 @@
           );
         }
 
+        showEditExerciseModal(exerciseId) {
+          this.editingExerciseId = exerciseId;
+          const exercise = this.dataStore.exerciseMap.get(exerciseId);
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Edit Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Exercise Name</label>
+                        <input type="text" class="form-input" id="exerciseName" 
+                               value="${exercise.name}" autocomplete="off">
+                    </div>
+                    <button class="button-primary" onclick="app.saveExerciseEdit()">Save Changes</button>
+                `;
+
+          modal.classList.add("show");
+          setTimeout(
+            () => document.getElementById("exerciseName").focus(),
+            100
+          );
+        }
+
         addExercise() {
           const name = document.getElementById("exerciseName").value.trim();
           if (!name) {
@@ -1603,6 +1656,19 @@
           this.closeModal();
           this.loadExercisesList();
           this.showSyncStatus("Exercise added", 2000);
+        }
+
+        saveExerciseEdit() {
+          const name = document.getElementById("exerciseName").value.trim();
+          if (!name) {
+            alert("Please enter an exercise name");
+            return;
+          }
+
+          this.dataStore.updateExercise(this.editingExerciseId, name);
+          this.closeModal();
+          this.loadExercisesList();
+          this.showSyncStatus("Exercise updated", 2000);
         }
 
         deleteExercise(exerciseId) {
