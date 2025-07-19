@@ -658,18 +658,30 @@
         loadFromLocalStorage() {
           const stored = localStorage.getItem("weightTracker_data");
           if (stored) {
-            const data = JSON.parse(stored);
-            this.exercises = data.exercises || [];
-            this.workouts = data.workouts || [];
-            this.records = data.records || [];
-            this.buildMaps();
+            try {
+              const data = JSON.parse(stored);
+              this.exercises = data.exercises || [];
+              this.workouts = data.workouts || [];
+              this.records = data.records || [];
+              this.buildMaps();
+            } catch (error) {
+              console.error("Failed to parse stored data:", error);
+              // Clear corrupted data
+              localStorage.removeItem("weightTracker_data");
+            }
           }
 
           const pending = localStorage.getItem("weightTracker_pending");
           if (pending) {
-            const pendingData = JSON.parse(pending);
-            this.pendingRecords = pendingData.pendingRecords || [];
-            this.lastSyncTime = pendingData.lastSyncTime;
+            try {
+              const pendingData = JSON.parse(pending);
+              this.pendingRecords = pendingData.pendingRecords || [];
+              this.lastSyncTime = pendingData.lastSyncTime;
+            } catch (error) {
+              console.error("Failed to parse pending data:", error);
+              // Clear corrupted data
+              localStorage.removeItem("weightTracker_pending");
+            }
           }
         }
 
@@ -717,24 +729,39 @@
 
           // Parse files
           if (gist.files[CONFIG.gistFiles.exercises]) {
-            const exercisesData = JSON.parse(
-              gist.files[CONFIG.gistFiles.exercises].content
-            );
-            this.exercises = exercisesData.exercises || [];
+            try {
+              const exercisesData = JSON.parse(
+                gist.files[CONFIG.gistFiles.exercises].content
+              );
+              this.exercises = exercisesData.exercises || [];
+            } catch (error) {
+              console.error("Failed to parse exercises from gist:", error);
+              this.exercises = [];
+            }
           }
 
           if (gist.files[CONFIG.gistFiles.workouts]) {
-            const workoutsData = JSON.parse(
-              gist.files[CONFIG.gistFiles.workouts].content
-            );
-            this.workouts = workoutsData.workouts || [];
+            try {
+              const workoutsData = JSON.parse(
+                gist.files[CONFIG.gistFiles.workouts].content
+              );
+              this.workouts = workoutsData.workouts || [];
+            } catch (error) {
+              console.error("Failed to parse workouts from gist:", error);
+              this.workouts = [];
+            }
           }
 
           if (gist.files[CONFIG.gistFiles.records]) {
-            const recordsData = JSON.parse(
-              gist.files[CONFIG.gistFiles.records].content
-            );
-            this.records = recordsData.records || [];
+            try {
+              const recordsData = JSON.parse(
+                gist.files[CONFIG.gistFiles.records].content
+              );
+              this.records = recordsData.records || [];
+            } catch (error) {
+              console.error("Failed to parse records from gist:", error);
+              this.records = [];
+            }
           }
 
           this.buildMaps();
@@ -955,9 +982,25 @@
           status.textContent = message;
           status.classList.add("show");
 
-          setTimeout(() => {
+          // Clear any existing timeout
+          if (this.syncStatusTimeout) {
+            clearTimeout(this.syncStatusTimeout);
+          }
+
+          // Set new timeout
+          this.syncStatusTimeout = setTimeout(() => {
             status.classList.remove("show");
+            this.syncStatusTimeout = null;
           }, duration);
+        }
+
+        clearSyncStatus() {
+          const status = document.getElementById("syncStatus");
+          status.classList.remove("show");
+          if (this.syncStatusTimeout) {
+            clearTimeout(this.syncStatusTimeout);
+            this.syncStatusTimeout = null;
+          }
         }
 
         async sync() {
@@ -965,6 +1008,24 @@
             this.showConfigModal();
             return;
           }
+
+          // Prevent concurrent sync operations
+          if (this.isSyncing) {
+            this.showSyncStatus("Sync already in progress", 2000);
+            return;
+          }
+
+          this.isSyncing = true;
+          // Clear any existing status first
+          this.clearSyncStatus();
+
+          // Set a failsafe timeout of 30 seconds
+          const failsafeTimeout = setTimeout(() => {
+            if (this.isSyncing) {
+              this.isSyncing = false;
+              this.showSyncStatus("Sync timeout - please try again", 3000);
+            }
+          }, 30000);
 
           try {
             this.showSyncStatus("Syncing...");
@@ -989,6 +1050,9 @@
           } catch (error) {
             console.error("Sync failed:", error);
             this.showSyncStatus(error.message || "Sync failed", 3000);
+          } finally {
+            clearTimeout(failsafeTimeout);
+            this.isSyncing = false;
           }
         }
 
@@ -1172,7 +1236,7 @@
                             <div class="input-group">
                                 <input type="number" id="weight_${index}" placeholder="${
                 set.placeholderWeight || ""
-              }" 
+              }"
                                        value="${
                                          set.weight || ""
                                        }" onchange="app.updateSet(${index}, 'weight', this.value)" />
@@ -1181,7 +1245,7 @@
                             <div class="input-group">
                                 <input type="number" id="reps_${index}" placeholder="${
                 set.placeholderReps || ""
-              }" 
+              }"
                                        value="${
                                          set.reps || ""
                                        }" onchange="app.updateSet(${index}, 'reps', this.value)" />
@@ -1415,12 +1479,12 @@
                     <form autocomplete="on" onsubmit="event.preventDefault(); app.saveConfig();">
                         <div class="form-group">
                             <label class="form-label" for="gistId">Username (Gist ID)</label>
-                            <input type="text" 
-                                   class="form-input" 
-                                   id="gistId" 
+                            <input type="text"
+                                   class="form-input"
+                                   id="gistId"
                                    name="username"
                                    autocomplete="username"
-                                   placeholder="abc123def456" 
+                                   placeholder="abc123def456"
                                    value="${CONFIG.gistId}">
                         </div>
                         <div class="form-group">
