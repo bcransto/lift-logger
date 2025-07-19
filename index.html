@@ -917,31 +917,6 @@
         async initialize() {
           await this.dataStore.initialize();
           this.updateConfigStatus();
-
-          // Don't add default data - let it sync from Gist
-          // if (this.dataStore.exercises.length === 0) {
-          //     this.setupInitialData();
-          // }
-        }
-
-        setupInitialData() {
-          // Add some default exercises
-          const defaultExercises = [
-            "Bench Press",
-            "Squat",
-            "Deadlift",
-            "Overhead Press",
-            "Barbell Row",
-            "Pull-ups",
-            "Dips",
-            "Romanian Deadlift",
-          ];
-
-          defaultExercises.forEach((name) => {
-            this.dataStore.addExercise(name);
-          });
-
-          this.showSyncStatus("Added default exercises", 2000);
         }
 
         updateConfigStatus() {
