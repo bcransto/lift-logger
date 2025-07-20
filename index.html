@@ -636,7 +636,7 @@
             ‹ Back
           </button>
           <div class="header-title" id="exerciseTitle">Exercise</div>
-          <button class="header-action" onclick="app.saveExercise()">
+          <button class="header-action" onclick="app.viewedExercise ? app.backToWorkout() : app.saveExercise()">
             Done
           </button>
         </div>
@@ -1513,45 +1513,84 @@
         }
 
         startExercise(exerciseId) {
-          // Check if this exercise has saved data from current session
-          if (this.currentExercise === exerciseId && this.currentSets) {
-            // Keep the existing currentSets for this exercise
-            // Don't clear the sets
-          } else {
-            // Starting a different exercise or no saved data
-            this.currentExercise = exerciseId;
-            this.currentSets = [];
+          console.log('🏋️ startExercise called with exerciseId:', exerciseId);
+          console.log('📊 Current exercise state:', {
+            currentExercise: this.currentExercise,
+            currentSetsCount: this.currentSets ? this.currentSets.length : 0,
+            currentSetsWithData: this.currentSets ? this.currentSets.filter(s => s.weight && s.reps).length : 0
+          });
+          
+          const isCompleted = this.currentWorkout.completedExercises.includes(exerciseId);
+          console.log('✅ Exercise completion status:', { exerciseId, isCompleted });
+          
+          // Preserve the current exercise state for later restoration
+          const preservedExercise = this.currentExercise;
+          const preservedSets = this.currentSets ? [...this.currentSets] : [];
+          console.log('💾 Preserved state:', { 
+            preservedExercise, 
+            preservedSetsCount: preservedSets.length,
+            preservedSetsWithData: preservedSets.filter(s => s.weight && s.reps).length
+          });
+          
+          if (isCompleted) {
+            console.log('👀 Viewing completed exercise - preserving current exercise state');
             
-            // If this exercise was completed, load its records as read-only
-            const isCompleted = this.currentWorkout.completedExercises.includes(exerciseId);
-            if (isCompleted) {
-              // Find records from both saved and pending records for TODAY'S workout
-              const records = [...this.dataStore.records, ...this.dataStore.pendingRecords]
-                .filter(r => 
-                  r.exerciseId === exerciseId && 
-                  r.workoutId === this.currentWorkout.id && 
-                  r.date === this.currentWorkout.date
-                );
-              
-              // Convert records to currentSets format as read-only
-              records.forEach(record => {
-                this.currentSets.push({
-                  weight: record.weight,
-                  reps: record.reps,
-                  isReadOnly: true,
-                  setNumber: record.set
-                });
+            // Store the preserved state for later restoration
+            this.preservedExercise = preservedExercise;
+            this.preservedSets = preservedSets;
+            
+            // For completed exercises, just show read-only data without changing active exercise
+            // Store the viewed exercise temporarily
+            this.viewedExercise = exerciseId;
+            this.viewedSets = [];
+            
+            // Find records from both saved and pending records for TODAY'S workout
+            const records = [...this.dataStore.records, ...this.dataStore.pendingRecords]
+              .filter(r => 
+                r.exerciseId === exerciseId && 
+                r.workoutId === this.currentWorkout.id && 
+                r.date === this.currentWorkout.date
+              );
+            
+            console.log('📋 Found records for completed exercise:', records.length);
+            
+            // Convert records to read-only sets format
+            records.forEach(record => {
+              this.viewedSets.push({
+                weight: record.weight,
+                reps: record.reps,
+                isReadOnly: true,
+                setNumber: record.set
               });
+            });
+            
+            // Temporarily set currentSets to viewed sets for display
+            this.currentSets = this.viewedSets;
+            
+          } else {
+            console.log('🔄 Starting/resuming incomplete exercise');
+            
+            // Check if this exercise has saved data from current session
+            if (this.currentExercise === exerciseId && this.currentSets) {
+              console.log('📈 Resuming same exercise with existing sets');
+              // Keep the existing currentSets for this exercise
+              // Don't clear the sets
+            } else {
+              console.log('🆕 Starting different exercise or no saved data');
+              // Starting a different exercise or no saved data
+              this.currentExercise = exerciseId;
+              this.currentSets = [];
+              
+              // Add one blank editable set
+              this.addBlankSet();
             }
             
-            // Add one blank editable set
-            this.addBlankSet();
-          }
-          
-          // Remove from completed exercises if re-entering
-          const completedIndex = this.currentWorkout.completedExercises.indexOf(exerciseId);
-          if (completedIndex > -1) {
-            this.currentWorkout.completedExercises.splice(completedIndex, 1);
+            // Remove from completed exercises if re-entering
+            const completedIndex = this.currentWorkout.completedExercises.indexOf(exerciseId);
+            if (completedIndex > -1) {
+              console.log('🔄 Removing from completed exercises for re-entry');
+              this.currentWorkout.completedExercises.splice(completedIndex, 1);
+            }
           }
 
           this.showView("exerciseView");
@@ -1562,12 +1601,15 @@
         }
 
         loadExerciseEntry() {
-          const exercise = this.dataStore.exerciseMap.get(this.currentExercise);
+          // Use viewedExercise if we're viewing a completed exercise, otherwise use currentExercise
+          const exerciseId = this.viewedExercise || this.currentExercise;
+          const exercise = this.dataStore.exerciseMap.get(exerciseId);
+          console.log('📝 loadExerciseEntry for:', { exerciseId, exerciseName: exercise.name, isViewingCompleted: !!this.viewedExercise });
           document.getElementById("exerciseTitle").textContent = exercise.name;
 
-          const pr = this.dataStore.calculatePR(this.currentExercise);
+          const pr = this.dataStore.calculatePR(exerciseId);
           const lastWorkout = this.dataStore.getLastWorkout(
-            this.currentExercise, 
+            exerciseId, 
             this.currentWorkout.date
           );
 
@@ -1620,7 +1662,7 @@
                     <div id="todaysSets" class="sets-container">
                         ${this.renderCurrentSets()}
                     </div>
-                    <button class="button-secondary" onclick="app.submitCurrentSet()">Submit</button>
+                    ${this.viewedExercise ? '' : '<button class="button-secondary" onclick="app.submitCurrentSet()">Submit</button>'}
                 `;
 
           document.getElementById("exerciseContent").innerHTML = html;
@@ -1637,7 +1679,7 @@
                 if (isReadOnly) {
                   // Render clickable read-only set
                   return `
-                    <div class="set-row read-only clickable" onclick="app.editSet('${this.currentWorkout.date}', '${this.currentWorkout.id}', '${this.currentExercise}', ${set.setNumber || index + 1}, 'exerciseView')">
+                    <div class="set-row read-only clickable" onclick="app.editSet('${this.currentWorkout.date}', '${this.currentWorkout.id}', '${this.viewedExercise || this.currentExercise}', ${set.setNumber || index + 1}, 'exerciseView')">
                         <span class="set-number">Set ${index + 1}</span>
                         <div class="set-display">
                             <span class="set-value">${set.weight} lbs × ${set.reps}</span>
@@ -1862,6 +1904,33 @@
         }
 
         backToWorkout() {
+          console.log('🔙 backToWorkout called');
+          console.log('🔍 Checking if we were viewing a completed exercise:', { 
+            viewedExercise: this.viewedExercise,
+            hasPreservedState: !!(this.preservedExercise || this.preservedSets)
+          });
+          
+          // If we were viewing a completed exercise, restore the preserved state
+          if (this.viewedExercise) {
+            console.log('🔄 Restoring preserved exercise state');
+            
+            // Restore the original exercise state
+            this.currentExercise = this.preservedExercise;
+            this.currentSets = this.preservedSets ? [...this.preservedSets] : [];
+            
+            console.log('✅ Restored state:', {
+              currentExercise: this.currentExercise,
+              currentSetsCount: this.currentSets.length,
+              currentSetsWithData: this.currentSets.filter(s => s.weight && s.reps).length
+            });
+            
+            // Clear the viewed exercise state
+            this.viewedExercise = null;
+            this.viewedSets = null;
+            this.preservedExercise = null;
+            this.preservedSets = null;
+          }
+          
           this.showView("workoutView");
           this.loadWorkoutExercises();
         }
