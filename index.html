@@ -561,9 +561,11 @@
       </div>
 
       <div style="padding: 20px 0">
-        <button class="button-primary" onclick="app.showWorkoutSelect()">
-          Start Workout
-        </button>
+        <div id="startWorkoutContainer">
+          <button class="button-primary" onclick="app.showWorkoutSelect()">
+            Start Workout
+          </button>
+        </div>
 
         <div class="section-title">Quick Actions</div>
         <div class="list-container">
@@ -1094,6 +1096,36 @@
           return workouts.slice(0, limit);
         }
 
+        saveActiveWorkout(workout) {
+          try {
+            const workoutData = JSON.stringify(workout);
+            localStorage.setItem('liftLogger_activeWorkout', workoutData);
+          } catch (error) {
+            console.error('Failed to save active workout:', error);
+          }
+        }
+
+        loadActiveWorkout() {
+          try {
+            const stored = localStorage.getItem('liftLogger_activeWorkout');
+            if (stored) {
+              return JSON.parse(stored);
+            }
+            return null;
+          } catch (error) {
+            console.error('Failed to load active workout:', error);
+            return null;
+          }
+        }
+
+        clearActiveWorkout() {
+          try {
+            localStorage.removeItem('liftLogger_activeWorkout');
+          } catch (error) {
+            console.error('Failed to clear active workout:', error);
+          }
+        }
+
       }
 
       // Main App Class
@@ -1107,6 +1139,19 @@
 
         async initialize() {
           await this.dataStore.initialize();
+          
+          // Check for active workout
+          const activeWorkout = this.dataStore.loadActiveWorkout();
+          console.log('loadActiveWorkout result:', activeWorkout);
+          this.hasActiveWorkout = activeWorkout !== null;
+          if (this.hasActiveWorkout) {
+            this.resumableWorkout = activeWorkout;
+            console.log('Set resumableWorkout to:', this.resumableWorkout);
+            this.showResumePrompt();
+          } else {
+            this.updateStartWorkoutButton();
+          }
+          
           this.updateConfigStatus();
         }
 
@@ -1119,6 +1164,72 @@
             status.textContent = "Not configured";
             status.style.color = "#ff3b30";
           }
+        }
+
+        updateStartWorkoutButton() {
+          const container = document.getElementById("startWorkoutContainer");
+          if (!container) return;
+
+          if (this.hasActiveWorkout && this.resumableWorkout) {
+            // Debug logging
+            console.log('resumableWorkout:', this.resumableWorkout);
+            console.log('resumableWorkout.workoutId:', this.resumableWorkout.workoutId);
+            console.log('resumableWorkout.id:', this.resumableWorkout.id);
+            
+            // Get workout name - use workoutId property
+            const workoutName = this.dataStore.getWorkoutName(this.resumableWorkout.workoutId);
+            console.log('Retrieved workout name:', workoutName);
+            
+            // Calculate time elapsed
+            const timeElapsed = this.getTimeElapsed(this.resumableWorkout.startedAt);
+            
+            // Show continue workout UI
+            container.innerHTML = `
+              <button class="button-primary" onclick="app.resumeWorkout()">
+                Continue Workout: ${workoutName}
+              </button>
+              <div style="text-align: center; color: #8e8e93; font-size: 15px; margin: 8px 0;">
+                Started ${timeElapsed}
+              </div>
+              <button class="button-secondary" onclick="app.showWorkoutSelect()">
+                Start Different Workout
+              </button>
+            `;
+          } else {
+            // Show normal start workout button
+            container.innerHTML = `
+              <button class="button-primary" onclick="app.showWorkoutSelect()">
+                Start Workout
+              </button>
+            `;
+          }
+        }
+
+        getTimeElapsed(startedAt) {
+          if (!startedAt) return "some time ago";
+          
+          const now = new Date();
+          const startTime = new Date(startedAt);
+          const diffMs = now - startTime;
+          const diffMinutes = Math.floor(diffMs / (1000 * 60));
+          const diffHours = Math.floor(diffMinutes / 60);
+          
+          if (diffHours > 0) {
+            return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+          } else if (diffMinutes > 0) {
+            return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+          } else {
+            return "just now";
+          }
+        }
+
+        resumeWorkout() {
+          // Close the modal and update UI
+          this.closeModal();
+          this.updateStartWorkoutButton();
+          
+          // Placeholder - will be implemented in Phase 3
+          console.log("Resume workout functionality to be implemented");
         }
 
         showView(viewId) {
@@ -1257,9 +1368,17 @@
         }
 
         startWorkout(workoutId) {
+          const today = new Date().toISOString().split("T")[0];
+          
+          // Clean up any existing pendingRecords for this workout and date
+          // This prevents accumulation during testing/multiple starts
+          this.dataStore.pendingRecords = this.dataStore.pendingRecords.filter(record =>
+            !(record.workoutId === workoutId && record.date === today)
+          );
+
           this.currentWorkout = {
             id: workoutId,
-            date: new Date().toISOString().split("T")[0],
+            date: today,
             completedExercises: [],
             addedExercises: [],
             exerciseSets: {},
@@ -1295,11 +1414,14 @@
                             const exercise = this.dataStore.exerciseMap.get(
                               ex.exerciseId
                             );
-                            const isCompleted =
-                              this.currentWorkout.completedExercises.includes(
-                                ex.exerciseId
-                              );
-                            const hasLoggedSets = this.currentWorkout.exerciseSets[ex.exerciseId] && 
+                            const isCompleted = 
+                              this.currentWorkout && 
+                              this.currentWorkout.completedExercises && 
+                              Array.isArray(this.currentWorkout.completedExercises) &&
+                              this.currentWorkout.completedExercises.includes(ex.exerciseId);
+                            const hasLoggedSets = this.currentWorkout &&
+                                                  this.currentWorkout.exerciseSets &&
+                                                  this.currentWorkout.exerciseSets[ex.exerciseId] && 
                                                   this.currentWorkout.exerciseSets[ex.exerciseId].length > 0;
                             const isDeleted = exercise.isDeleted;
                             const exerciseName = isDeleted ? `${exercise.name} (Deleted)` : exercise.name;
@@ -1310,7 +1432,11 @@
                             let statusText;
                             if (isCompleted) {
                               statusText = "Completed";
-                            } else if (hasLoggedSets) {
+                            } else if (this.currentExercise === ex.exerciseId && this.currentSets && this.currentSets.length > 0) {
+                              // Exercise has saved sets from current session - only count sets with actual data
+                              const completedSets = this.currentSets.filter(s => s.weight && s.reps).length;
+                              statusText = `${completedSets} sets recorded`;
+                            } else if (hasLoggedSets && this.currentWorkout.exerciseSets[ex.exerciseId]) {
                               const setCount = this.currentWorkout.exerciseSets[ex.exerciseId].length;
                               statusText = `${setCount} set${setCount > 1 ? 's' : ''} logged`;
                             } else {
@@ -1387,7 +1513,40 @@
         }
 
         startExercise(exerciseId) {
-          this.currentExercise = exerciseId;
+          // Check if this exercise has saved data from current session
+          if (this.currentExercise === exerciseId && this.currentSets) {
+            // Keep the existing currentSets for this exercise
+            // Don't clear the sets
+          } else {
+            // Starting a different exercise or no saved data
+            this.currentExercise = exerciseId;
+            this.currentSets = [];
+            
+            // If this exercise was completed, load its records as read-only
+            const isCompleted = this.currentWorkout.completedExercises.includes(exerciseId);
+            if (isCompleted) {
+              // Find records from both saved and pending records for TODAY'S workout
+              const records = [...this.dataStore.records, ...this.dataStore.pendingRecords]
+                .filter(r => 
+                  r.exerciseId === exerciseId && 
+                  r.workoutId === this.currentWorkout.id && 
+                  r.date === this.currentWorkout.date
+                );
+              
+              // Convert records to currentSets format as read-only
+              records.forEach(record => {
+                this.currentSets.push({
+                  weight: record.weight,
+                  reps: record.reps,
+                  isReadOnly: true,
+                  setNumber: record.set
+                });
+              });
+            }
+            
+            // Add one blank editable set
+            this.addBlankSet();
+          }
           
           // Remove from completed exercises if re-entering
           const completedIndex = this.currentWorkout.completedExercises.indexOf(exerciseId);
@@ -1397,9 +1556,6 @@
 
           this.showView("exerciseView");
           this.loadExerciseEntry();
-          
-          // Build currentSets using consistent logic (after DOM is ready)
-          this.rebuildCurrentSets();
           
           // Update the rendered sets in the DOM
           document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
@@ -1464,7 +1620,7 @@
                     <div id="todaysSets" class="sets-container">
                         ${this.renderCurrentSets()}
                     </div>
-                    <button class="button-secondary" onclick="app.submitSet()">Submit</button>
+                    <button class="button-secondary" onclick="app.submitCurrentSet()">Submit</button>
                 `;
 
           document.getElementById("exerciseContent").innerHTML = html;
@@ -1530,6 +1686,47 @@
             .join("");
         }
 
+        submitCurrentSet() {
+          // Find the last set that has data but isn't read-only
+          const lastSetIndex = this.currentSets.length - 1;
+          if (lastSetIndex < 0) {
+            alert("No set to submit");
+            return;
+          }
+
+          const currentSet = this.currentSets[lastSetIndex];
+          
+          // Validate that weight and reps are entered
+          if (!currentSet.weight || !currentSet.reps) {
+            alert("Please enter both weight and reps for this set.");
+            return;
+          }
+
+          // Create record
+          const setNumber = lastSetIndex + 1;
+          const record = {
+            date: this.currentWorkout.date,
+            workoutId: this.currentWorkout.id,
+            exerciseId: this.currentExercise,
+            set: setNumber,
+            weight: currentSet.weight,
+            reps: currentSet.reps,
+          };
+
+          // Save to pending records
+          this.dataStore.addRecords([record]);
+
+          // Show success message
+          this.showSyncStatus("Set saved", 1500);
+
+          // Mark the current set as read-only and add a new blank set
+          currentSet.isReadOnly = true;
+          this.addBlankSet();
+
+          // Re-render the sets container
+          document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
+        }
+
         addSet() {
           const lastWorkout = this.dataStore.getLastWorkout(
             this.currentExercise, 
@@ -1570,73 +1767,30 @@
 
         updateSetInput(index, field, value) {
           this.currentSets[index][field] = value ? parseInt(value) : "";
-        }
-
-        submitSet() {
-          // Find the current set (last one in currentSets)
-          const currentSetIndex = this.currentSets.length - 1;
-          if (currentSetIndex < 0) {
-            this.addSet();
-            return;
-          }
-
-          const currentSet = this.currentSets[currentSetIndex];
           
-          // Validate that weight and reps are entered
-          if (!currentSet.weight || !currentSet.reps) {
-            alert("Please enter both weight and reps for this set.");
-            return;
-          }
-
-          // Initialize exerciseSets for this exercise if not exists
-          if (!this.currentWorkout.exerciseSets[this.currentExercise]) {
-            this.currentWorkout.exerciseSets[this.currentExercise] = [];
-          }
-
-          // Create record
-          const setNumber = this.currentWorkout.exerciseSets[this.currentExercise].length + 1;
-          const record = {
-            date: this.currentWorkout.date,
-            workoutId: this.currentWorkout.id,
-            exerciseId: this.currentExercise,
-            set: setNumber,
-            weight: currentSet.weight,
-            reps: currentSet.reps,
-          };
-
-          // Save to pending records and workout tracking
-          this.dataStore.addRecords([record]);
-          this.currentWorkout.exerciseSets[this.currentExercise].push(record);
-
-          // Show success message
-          this.showSyncStatus("Set saved", 1500);
-
-          // Rebuild currentSets from exerciseSets (read-only) plus one blank
-          this.rebuildCurrentSets();
-
-          // Re-render the sets container
-          document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
-        }
-
-        rebuildCurrentSets() {
-          // Clear current sets
-          this.currentSets = [];
-          
-          // Add read-only sets from exerciseSets
-          if (this.currentWorkout.exerciseSets[this.currentExercise]) {
-            this.currentWorkout.exerciseSets[this.currentExercise].forEach(record => {
-              this.currentSets.push({
-                weight: record.weight,
-                reps: record.reps,
-                isReadOnly: true,
-                setNumber: record.set
-              });
-            });
+          // Debounced saving to avoid excessive localStorage writes
+          if (this.saveStateTimeout) {
+            clearTimeout(this.saveStateTimeout);
           }
           
-          // Add one blank editable set
-          this.addBlankSet();
+          this.saveStateTimeout = setTimeout(() => {
+            // Save the entire workout state
+            const workoutState = {
+              workoutId: this.currentWorkout.id,
+              date: this.currentWorkout.date,
+              startedAt: this.currentWorkout.startedAt,
+              completedExercises: this.currentWorkout.completedExercises,
+              currentExerciseData: {
+                exerciseId: this.currentExercise,
+                sets: this.currentSets
+              }
+            };
+            
+            this.dataStore.saveActiveWorkout(workoutState);
+          }, 100);
         }
+
+
 
         addBlankSet() {
           const lastWorkout = this.dataStore.getLastWorkout(
@@ -1669,8 +1823,14 @@
 
         saveExercise() {
           // Check if any sets have been logged for this exercise
-          if (!this.currentWorkout.exerciseSets[this.currentExercise] || 
-              this.currentWorkout.exerciseSets[this.currentExercise].length === 0) {
+          const exerciseRecords = [...this.dataStore.records, ...this.dataStore.pendingRecords]
+            .filter(r => 
+              r.exerciseId === this.currentExercise && 
+              r.workoutId === this.currentWorkout.id && 
+              r.date === this.currentWorkout.date
+            );
+            
+          if (exerciseRecords.length === 0) {
             alert("Please submit at least one set before marking as complete");
             return;
           }
@@ -1683,6 +1843,20 @@
           ) {
             this.currentWorkout.completedExercises.push(this.currentExercise);
           }
+
+          // Save the entire workout state
+          const workoutState = {
+            workoutId: this.currentWorkout.id,
+            date: this.currentWorkout.date,
+            startedAt: this.currentWorkout.startedAt,
+            completedExercises: this.currentWorkout.completedExercises,
+            currentExerciseData: {
+              exerciseId: this.currentExercise,
+              sets: this.currentSets
+            }
+          };
+          
+          this.dataStore.saveActiveWorkout(workoutState);
 
           this.backToWorkout();
         }
@@ -2071,8 +2245,7 @@
             // Return to exercise entry view and refresh
             this.showView("exerciseView");
             this.loadExerciseEntry();
-            // Rebuild and refresh the sets display
-            this.rebuildCurrentSets();
+            // Refresh the sets display
             document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
           } else {
             // Go back to workout details and refresh the data
@@ -2172,8 +2345,7 @@
             // Return to exercise entry view and refresh
             this.showView("exerciseView");
             this.loadExerciseEntry();
-            // Rebuild and refresh the sets display
-            this.rebuildCurrentSets();
+            // Refresh the sets display
             document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
           } else {
             // Go back to workout details and refresh the data
@@ -2182,6 +2354,63 @@
               this.currentEditRecord.workoutId
             );
           }
+        }
+
+        showResumePrompt() {
+          if (!this.hasActiveWorkout || !this.resumableWorkout) return;
+          
+          // Get workout name and calculate time elapsed
+          const workoutName = this.dataStore.getWorkoutName(this.resumableWorkout.workoutId);
+          const timeElapsed = this.getTimeElapsed(this.resumableWorkout.startedAt);
+          
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+            <div class="modal-header">
+              <h2 class="modal-title">Resume Workout?</h2>
+            </div>
+            <div style="padding: 20px 0;">
+              <p style="font-size: 17px; line-height: 1.4; margin-bottom: 20px;">
+                You have an unfinished <strong>${workoutName}</strong> from <strong>${timeElapsed}</strong>
+              </p>
+              <button class="button-primary" onclick="app.resumeWorkout()" style="margin-bottom: 16px;">
+                Resume
+              </button>
+              <button class="button-secondary" onclick="app.discardWorkout()">
+                Discard
+              </button>
+            </div>
+          `;
+
+          modal.classList.add("show");
+        }
+
+        resumeWorkout() {
+          // Map the saved workout data to the expected format
+          this.currentWorkout = {
+            id: this.resumableWorkout.workoutId,  // Map workoutId → id
+            date: this.resumableWorkout.date,
+            completedExercises: this.resumableWorkout.completedExercises || []
+          };
+          
+          // Restore current exercise data if it exists
+          if (this.resumableWorkout.currentExerciseData) {
+            this.currentExercise = this.resumableWorkout.currentExerciseData.exerciseId;
+            this.currentSets = this.resumableWorkout.currentExerciseData.sets;
+          }
+          
+          this.closeModal();
+          this.showView('workoutView');
+          this.loadWorkoutExercises();
+        }
+
+        discardWorkout() {
+          this.dataStore.clearActiveWorkout();
+          this.hasActiveWorkout = false;
+          this.resumableWorkout = null;
+          this.closeModal();
+          this.updateStartWorkoutButton();
         }
 
         // Modal Management
