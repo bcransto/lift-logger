@@ -13,38 +13,58 @@ Since this is a vanilla web application with no build process:
 - **Run locally**: Open `index.html` directly in a web browser
 - **Test**: Manual testing in browser (no automated test suite)
 - **Deploy**: Copy `index.html` to any web server
-- **Lint**: No linting tools configured (manual code review only)
+- **Lint**: `npm run lint` (ESLint with HTML plugin for embedded JavaScript)
+- **Lint fix**: `npm run lint:fix` (automatically fix linting issues where possible)
 
 ## Architecture
 
 ### Single-File Application
-The entire application is contained in `index.html` (~1700 lines) with embedded CSS and JavaScript. This design choice prioritizes simplicity and zero-dependency deployment.
+The entire application is contained in `index.html` (~2,637 lines) with embedded CSS and JavaScript. This design choice prioritizes simplicity and zero-dependency deployment.
 
 ### Data Architecture
-- **Local-first storage**: Primary data lives in browser localStorage
-- **Cloud sync**: Optional bidirectional sync with GitHub Gists API
-- **Three data types**: Exercises (definitions), Workouts (templates), Records (actual workout data)
+- **Local-first storage**: Primary data lives in browser localStorage with immediate saves
+- **No pending state**: All changes save directly to localStorage without intermediate storage
+- **Cloud sync**: Optional explicit sync with GitHub Gists API (no auto-sync)
+- **Three data types**: Exercises (definitions), Workouts (templates), Records (actual workout data with timestamps)
 
 ### Key Classes
 
-**DataStore** (lines 632-933): Core data persistence and management
+**DataStore** (lines 734-1079): Core data persistence and management
 - Handles localStorage operations and GitHub Gist synchronization
 - Manages exercises, workouts, and workout records
 - Provides data access methods and analytics (PR calculations)
+- Implements explicit sync points (no auto-sync)
 
-**WeightTrackerApp** (lines 936-1699): Main application controller
+**WeightTrackerApp** (lines 1082-2629): Main application controller
 - View navigation and UI state management
 - Workout flow orchestration (start → record sets → finish)
 - Modal management for configuration and data entry
+- Inline editing system for real-time set updates
+- Current workouts tracking and resumption
 
 ### Data Flow
 1. App initializes → Load from localStorage → Optional Gist sync
 2. User selects workout template → Records exercises with sets/reps/weights
-3. Data saves locally → Syncs to Gist (if configured)
+3. Data saves immediately to localStorage → Explicit sync to Gist on completion
+4. Workout state persists for resumption → Time tracking with timestamps
 
-### Sync Status System
-The sync status display uses timeout management to prevent stuck states:
-- `showSyncStatus()` with timeout tracking
+### Key Features
+
+**Inline Editing System**
+- Real-time set editing with `updateSetData()` providing immediate saves
+- Visual feedback via `updateSetRowStyling()` (has-data vs empty styling)
+- Uses `oninput` events for immediate responsiveness
+- No modal dialogs for set editing
+
+**Workout Resumption**
+- Active workout persistence in localStorage
+- Resume capability with time elapsed display
+- Automatic state saving during exercise progress
+- Current workouts section on home screen
+
+**Sync Status System**
+- Explicit sync points only (finish workout, edit templates, manual sync)
+- Timeout management to prevent stuck states
 - `isSyncing` flag prevents concurrent operations
 - 30-second failsafe timeout for hung operations
 
@@ -62,6 +82,7 @@ GitHub integration requires:
 - Event delegation for dynamic UI elements
 - Try-catch blocks around all JSON.parse operations
 - localStorage for offline persistence with Gist backup
+- Mobile-first design with iOS-specific optimizations
 
 ## Common Modifications
 
@@ -70,3 +91,4 @@ When adding features:
 - New workout templates: Add to `workouts.json` with exercise references
 - UI changes: Modify embedded CSS in `<style>` section
 - New views: Add HTML in view container, update `showView()` method
+- Sync behavior: Use explicit sync points, avoid auto-sync patterns
