@@ -1046,35 +1046,6 @@
           return workouts.slice(0, limit);
         }
 
-        saveActiveWorkout(workout) {
-          try {
-            const workoutData = JSON.stringify(workout);
-            localStorage.setItem('liftLogger_activeWorkout', workoutData);
-          } catch (error) {
-            console.error('Failed to save active workout:', error);
-          }
-        }
-
-        loadActiveWorkout() {
-          try {
-            const stored = localStorage.getItem('liftLogger_activeWorkout');
-            if (stored) {
-              return JSON.parse(stored);
-            }
-            return null;
-          } catch (error) {
-            console.error('Failed to load active workout:', error);
-            return null;
-          }
-        }
-
-        clearActiveWorkout() {
-          try {
-            localStorage.removeItem('liftLogger_activeWorkout');
-          } catch (error) {
-            console.error('Failed to clear active workout:', error);
-          }
-        }
 
       }
 
@@ -1177,19 +1148,7 @@
 
         async initialize() {
           await this.dataStore.initialize();
-          
-          // Check for active workout
-          const activeWorkout = this.dataStore.loadActiveWorkout();
-          console.log('loadActiveWorkout result:', activeWorkout);
-          this.hasActiveWorkout = activeWorkout !== null;
-          if (this.hasActiveWorkout) {
-            this.resumableWorkout = activeWorkout;
-            console.log('Set resumableWorkout to:', this.resumableWorkout);
-            this.showResumePrompt();
-          } else {
-            this.updateStartWorkoutButton();
-          }
-          
+          this.updateStartWorkoutButton();
           this.loadCurrentWorkouts();
           this.updateConfigStatus();
         }
@@ -1209,39 +1168,11 @@
           const container = document.getElementById("startWorkoutContainer");
           if (!container) return;
 
-          if (this.hasActiveWorkout && this.resumableWorkout) {
-            // Debug logging
-            console.log('resumableWorkout:', this.resumableWorkout);
-            console.log('resumableWorkout.workoutId:', this.resumableWorkout.workoutId);
-            console.log('resumableWorkout.id:', this.resumableWorkout.id);
-            
-            // Get workout name - use workoutId property
-            const workoutName = this.dataStore.getWorkoutName(this.resumableWorkout.workoutId);
-            console.log('Retrieved workout name:', workoutName);
-            
-            // Calculate time elapsed
-            const timeElapsed = this.getTimeElapsed(this.resumableWorkout.startedAt);
-            
-            // Show continue workout UI
-            container.innerHTML = `
-              <button class="button-primary" onclick="app.resumeWorkout()">
-                Continue Workout: ${workoutName}
-              </button>
-              <div style="text-align: center; color: #8e8e93; font-size: 15px; margin: 8px 0;">
-                Started ${timeElapsed}
-              </div>
-              <button class="button-secondary" onclick="app.showWorkoutSelect()">
-                Start Different Workout
-              </button>
-            `;
-          } else {
-            // Show normal start workout button
-            container.innerHTML = `
-              <button class="button-primary" onclick="app.showWorkoutSelect()">
-                Start Workout
-              </button>
-            `;
-          }
+          container.innerHTML = `
+            <button class="button-primary" onclick="app.showWorkoutSelect()">
+              Start Workout
+            </button>
+          `;
         }
 
         getTimeElapsed(startedAt) {
@@ -1262,14 +1193,6 @@
           }
         }
 
-        resumeWorkout() {
-          // Close the modal and update UI
-          this.closeModal();
-          this.updateStartWorkoutButton();
-          
-          // Placeholder - will be implemented in Phase 3
-          console.log("Resume workout functionality to be implemented");
-        }
 
         showView(viewId) {
           document.querySelectorAll(".view").forEach((view) => {
@@ -1526,7 +1449,13 @@
                             // Determine status text
                             let statusText;
                             if (isCompleted) {
-                              statusText = "Completed";
+                              // Count the number of recorded sets for completed exercises
+                              const recordedSets = this.dataStore.records.filter(r => 
+                                r.exerciseId === ex.exerciseId && 
+                                r.workoutId === this.currentWorkout.id && 
+                                r.date === this.currentWorkout.date
+                              ).length;
+                              statusText = `${recordedSets} set${recordedSets !== 1 ? 's' : ''} recorded`;
                             } else if (this.currentExercise === ex.exerciseId && this.currentSets && this.currentSets.length > 0) {
                               // Exercise has saved sets from current session - only count sets with actual data
                               const completedSets = this.currentSets.filter(s => s.weight && s.reps).length;
@@ -1885,19 +1814,7 @@
           }
           
           this.saveStateTimeout = setTimeout(() => {
-            // Save the entire workout state
-            const workoutState = {
-              workoutId: this.currentWorkout.id,
-              date: this.currentWorkout.date,
-              startedAt: this.currentWorkout.startedAt,
-              completedExercises: this.currentWorkout.completedExercises,
-              currentExerciseData: {
-                exerciseId: this.currentExercise,
-                sets: this.currentSets
-              }
-            };
-            
-            this.dataStore.saveActiveWorkout(workoutState);
+            // Placeholder for debounced save - can be removed if not needed
           }, 100);
         }
 
@@ -1978,19 +1895,6 @@
             this.currentWorkout.completedExercises.push(this.currentExercise);
           }
 
-          // Save the entire workout state
-          const workoutState = {
-            workoutId: this.currentWorkout.id,
-            date: this.currentWorkout.date,
-            startedAt: this.currentWorkout.startedAt,
-            completedExercises: this.currentWorkout.completedExercises,
-            currentExerciseData: {
-              exerciseId: this.currentExercise,
-              sets: this.currentSets
-            }
-          };
-          
-          this.dataStore.saveActiveWorkout(workoutState);
 
           this.backToWorkout();
         }
@@ -2057,8 +1961,6 @@
             this.showSyncStatus("Workout saved locally", 2000);
           }
 
-          // Clear active workout from localStorage if using persistence
-          this.dataStore.clearActiveWorkout();
           
           this.currentWorkout = null;
           this.showView("homeView");
@@ -2215,62 +2117,6 @@
         }
 
 
-        showResumePrompt() {
-          if (!this.hasActiveWorkout || !this.resumableWorkout) return;
-          
-          // Get workout name and calculate time elapsed
-          const workoutName = this.dataStore.getWorkoutName(this.resumableWorkout.workoutId);
-          const timeElapsed = this.getTimeElapsed(this.resumableWorkout.startedAt);
-          
-          const modal = document.getElementById("modal");
-          const content = document.getElementById("modalContent");
-
-          content.innerHTML = `
-            <div class="modal-header">
-              <h2 class="modal-title">Resume Workout?</h2>
-            </div>
-            <div style="padding: 20px 0;">
-              <p style="font-size: 17px; line-height: 1.4; margin-bottom: 20px;">
-                You have an unfinished <strong>${workoutName}</strong> from <strong>${timeElapsed}</strong>
-              </p>
-              <button class="button-primary" onclick="app.resumeWorkout()" style="margin-bottom: 16px;">
-                Resume
-              </button>
-              <button class="button-secondary" onclick="app.discardWorkout()">
-                Discard
-              </button>
-            </div>
-          `;
-
-          modal.classList.add("show");
-        }
-
-        resumeWorkout() {
-          // Map the saved workout data to the expected format
-          this.currentWorkout = {
-            id: this.resumableWorkout.workoutId,  // Map workoutId → id
-            date: this.resumableWorkout.date,
-            completedExercises: this.resumableWorkout.completedExercises || []
-          };
-          
-          // Restore current exercise data if it exists
-          if (this.resumableWorkout.currentExerciseData) {
-            this.currentExercise = this.resumableWorkout.currentExerciseData.exerciseId;
-            this.currentSets = this.resumableWorkout.currentExerciseData.sets;
-          }
-          
-          this.closeModal();
-          this.showView('workoutView');
-          this.loadWorkoutExercises();
-        }
-
-        discardWorkout() {
-          this.dataStore.clearActiveWorkout();
-          this.hasActiveWorkout = false;
-          this.resumableWorkout = null;
-          this.closeModal();
-          this.updateStartWorkoutButton();
-        }
 
         // Modal Management
         showConfigModal() {
