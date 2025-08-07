@@ -1046,6 +1046,15 @@
           return workouts.slice(0, limit);
         }
 
+        deleteWorkoutRecords(date, workoutId) {
+          const initialCount = this.records.length;
+          this.records = this.records.filter(record => 
+            !(record.date === date && record.workoutId === workoutId)
+          );
+          const deletedCount = initialCount - this.records.length;
+          this.saveToLocalStorage();
+          return deletedCount;
+        }
 
       }
 
@@ -2110,10 +2119,40 @@
                   </div>
                 `;
               }).join('')}
+              <button class="button-secondary" style="background: #ff3b30; color: white; margin-top: 32px; margin-bottom: 32px;" onclick="app.deleteWorkout('${date}', '${workoutId}')">
+                Delete This Workout
+              </button>
             </div>
           `;
           
           this.showView('workoutDetailsView');
+        }
+
+        async deleteWorkout(date, workoutId) {
+          const workoutName = this.dataStore.getWorkoutName(workoutId);
+          const formattedDate = this.formatDate(date);
+          
+          if (!confirm(`Delete "${workoutName}" from ${formattedDate}? This cannot be undone.`)) {
+            return;
+          }
+          
+          const deletedCount = this.dataStore.deleteWorkoutRecords(date, workoutId);
+          
+          this.showSyncStatus(`Workout deleted (${deletedCount} exercises)`);
+          
+          // Sync to GitHub if configured
+          if (CONFIG.githubToken && CONFIG.gistId) {
+            try {
+              await this.dataStore.syncToGist();
+              this.showSyncStatus("Deleted and synced to GitHub", 2000);
+            } catch (error) {
+              console.error("Failed to sync after deletion:", error);
+              this.showSyncStatus("Deleted locally (sync failed)", 3000);
+            }
+          }
+          
+          this.showView('historyView');
+          this.loadHistory();
         }
 
 
@@ -2453,7 +2492,11 @@
 
         // Utility Methods
         formatDate(dateString) {
-          const date = new Date(dateString);
+          // Parse date string as local time, not UTC
+          // dateString is in format "YYYY-MM-DD"
+          const [year, month, day] = dateString.split('-').map(num => parseInt(num, 10));
+          const date = new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+          
           const months = [
             "Jan",
             "Feb",
