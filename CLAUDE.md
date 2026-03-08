@@ -67,7 +67,7 @@ The entire application is contained in `index.html` (~2,900 lines) with embedded
 ### PWA Structure
 - `manifest.json`: PWA manifest with standalone display mode
 - `sw.js`: Service worker with cache-first strategy (explicitly excludes `/api/` routes)
-- `icons/`: App icons (user must provide actual image files)
+- `icons/`: App icons (if present)
 
 ### Key Features
 
@@ -146,6 +146,54 @@ journalctl -u lift-logger -f         # View logs
 node lift-logger-api/scripts/load-backup.js http://pinto:3000
 ```
 
+## MCP Server (`lift-logger-mcp/`)
+
+MCP (Model Context Protocol) server for workout analysis and planning via Claude Desktop. Runs on the Pi alongside the API server, accessing the same SQLite database directly.
+
+### Setup
+- **Install**: `cd lift-logger-mcp && npm install`
+- **Run locally**: `node server.js` (runs on port 3001)
+- **Test**: `curl http://localhost:3001/health`
+
+### Tools
+- **`list_exercises`**: All exercises (optionally include soft-deleted)
+- **`list_workouts`**: All workout templates with exercises
+- **`get_workout_history`**: Sessions grouped by date/workout with all sets. Params: `startDate?`, `endDate?`, `workoutId?`, `limit?`
+- **`get_exercise_history`**: Exercise progress over time. Params: `exerciseId`, `startDate?`, `endDate?`, `limit?`
+- **`get_personal_records`**: PRs (max weight, reps, volume) per exercise. Params: `exerciseId?`
+- **`get_volume_summary`**: Aggregated volume by exercise/workout/week/day. Params: `startDate`, `endDate`, `groupBy`
+- **`query_records`**: Flexible record filter. Params: `exerciseId?`, `workoutId?`, `startDate?`, `endDate?`, `minWeight?`, `maxWeight?`
+- **`create_exercise`**: Create new exercise. Params: `name`
+- **`create_workout`**: Create workout template. Params: `name`, `exerciseIds` (comma-separated)
+
+### Architecture
+- SSE transport on port 3001 (Claude Desktop connects via `http://100.75.94.59:3001/sse`)
+- Direct SQLite access to `../lift-logger-api/data/liftlogger.db` (WAL mode for concurrent reads)
+- Deps: `@modelcontextprotocol/sdk`, `better-sqlite3`, `express`
+
+### Claude Desktop Config
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "lift-logger": {
+      "url": "http://100.75.94.59:3001/sse"
+    }
+  }
+}
+```
+
+### Deployment
+```bash
+# After git push + pull on Pi:
+ssh bcransto@pinto "cd ~/lift-logger-repo/lift-logger-mcp && npm install"
+ssh bcransto@pinto "sudo systemctl restart lift-logger-mcp"
+
+# Service management
+sudo systemctl status lift-logger-mcp
+journalctl -u lift-logger-mcp -f
+```
+
 ## Code Patterns
 
 - ES6 classes with async/await throughout
@@ -158,3 +206,5 @@ node lift-logger-api/scripts/load-backup.js http://pinto:3000
 - Modals use a single shared `#modal` / `#modalContent` container; shown/hidden via `.show` class
 - Exercise lists reuse shared `sortExercises()`, `renderSearchInput()`, and `filterExerciseList()` for consistent search/filter behavior
 - Use `font-size: 16px` on inputs to prevent iOS auto-zoom
+- Weight inputs use `inputmode="numeric"` for compact iOS keypad + custom ± toggle button for negative weights (assisted exercises)
+- Weight values use `Number()` not `parseInt()` — and validation checks `=== ""` or `=== undefined` instead of falsy checks (which fail for `0` and negatives)
