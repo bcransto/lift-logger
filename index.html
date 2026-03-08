@@ -325,6 +325,19 @@
         margin-left: 4px;
       }
 
+      .sign-toggle {
+        background: none;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 16px;
+        padding: 4px 8px;
+        margin: 0 4px;
+        color: #007aff;
+        cursor: pointer;
+        min-width: 36px;
+        min-height: 36px;
+      }
+
       .previous-sets {
         background: #fff;
         margin: 0 16px 16px;
@@ -2033,12 +2046,16 @@
                   <div class="set-inputs">
                     <div class="input-group">
                       <input type="number"
+                             inputmode="numeric"
+                             pattern="[0-9]*"
                              autocomplete="off"
                              min="-999"
                              enterkeyhint="done"
                              value="${set.weight || ""}"
                              placeholder="${set.placeholderWeight || ""}"
                              oninput="app.updateSetData(${index}, 'weight', this.value)" />
+                      <button type="button" class="sign-toggle"
+                              onclick="app.toggleWeightSign(${index})">±</button>
                       <span class="input-label">lbs</span>
                     </div>
                     <div class="input-group">
@@ -2168,8 +2185,20 @@
           if (setRow) {
             const set = this.currentSets[index];
             const hasData = set.weight && set.reps;
-            
+
             setRow.className = hasData ? "set-row has-data" : "set-row empty";
+          }
+        }
+
+        toggleWeightSign(index) {
+          const set = this.currentSets[index];
+          if (set.weight !== "" && set.weight !== undefined && set.weight !== 0) {
+            set.weight = -set.weight;
+            const inputs = document.querySelectorAll('.set-inputs input[type="number"]');
+            const weightInput = inputs[index * 2];
+            if (weightInput) weightInput.value = set.weight;
+            this.updateSetRowStyling(index);
+            this.scheduleSessionSave();
           }
         }
 
@@ -2515,12 +2544,17 @@
               
               <div class="form-group">
                 <label class="form-label">Weight (lbs)</label>
-                <input type="number"
-                       class="form-input"
-                       id="editWeight"
-                       min="-999"
-                       value="${currentWeight}"
-                       autocomplete="off">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="number"
+                         class="form-input"
+                         id="editWeight"
+                         inputmode="numeric"
+                         min="-999"
+                         value="${currentWeight}"
+                         autocomplete="off"
+                         style="flex: 1;">
+                  <button type="button" class="sign-toggle" onclick="app.toggleEditWeightSign()">±</button>
+                </div>
               </div>
               
               <div class="form-group">
@@ -2544,6 +2578,14 @@
 
           modal.classList.add("show");
           setTimeout(() => document.getElementById("editWeight").focus(), 100);
+        }
+
+        toggleEditWeightSign() {
+          const input = document.getElementById('editWeight');
+          const val = Number(input.value);
+          if (!isNaN(val) && val !== 0) {
+            input.value = -val;
+          }
         }
 
         async saveRecordEdit() {
