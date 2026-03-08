@@ -1010,7 +1010,7 @@
 
           // Find the highest weight with its max reps
           let pr = null;
-          let maxWeight = 0;
+          let maxWeight = -Infinity;
 
           Object.values(weightMap).forEach((record) => {
             if (record.weight > maxWeight) {
@@ -2032,13 +2032,11 @@
                   <span class="set-number">Set ${index + 1}</span>
                   <div class="set-inputs">
                     <div class="input-group">
-                      <input type="number" 
-                             inputmode="numeric" 
-                             pattern="[0-9]*"
+                      <input type="number"
                              autocomplete="off"
-                             min="0"
+                             min="-999"
                              enterkeyhint="done"
-                             value="${set.weight || ""}" 
+                             value="${set.weight || ""}"
                              placeholder="${set.placeholderWeight || ""}"
                              oninput="app.updateSetData(${index}, 'weight', this.value)" />
                       <span class="input-label">lbs</span>
@@ -2072,7 +2070,7 @@
 
           const currentSet = this.currentSets[lastSetIndex];
 
-          if (!currentSet.weight || !currentSet.reps) {
+          if (currentSet.weight === "" || currentSet.weight === undefined || !currentSet.reps) {
             alert("Please enter both weight and reps for this set.");
             return;
           }
@@ -2140,7 +2138,7 @@
         }
 
         updateSetInput(index, field, value) {
-          this.currentSets[index][field] = value ? parseInt(value) : "";
+          this.currentSets[index][field] = value !== "" ? Number(value) : "";
           
           // Update visual state immediately
           this.updateSetRowStyling(index);
@@ -2156,7 +2154,7 @@
         }
 
         updateSetData(index, field, value) {
-          this.currentSets[index][field] = value ? parseInt(value) : "";
+          this.currentSets[index][field] = value !== "" ? Number(value) : "";
 
           // Update visual state
           this.updateSetRowStyling(index);
@@ -2517,10 +2515,10 @@
               
               <div class="form-group">
                 <label class="form-label">Weight (lbs)</label>
-                <input type="number" 
-                       class="form-input" 
-                       id="editWeight" 
-                       inputmode="numeric"
+                <input type="number"
+                       class="form-input"
+                       id="editWeight"
+                       min="-999"
                        value="${currentWeight}"
                        autocomplete="off">
               </div>
@@ -2549,10 +2547,10 @@
         }
 
         async saveRecordEdit() {
-          const newWeight = parseInt(document.getElementById("editWeight").value);
+          const newWeight = Number(document.getElementById("editWeight").value);
           const newReps = parseInt(document.getElementById("editReps").value);
 
-          if (!newWeight || !newReps) {
+          if (isNaN(newWeight) || newWeight === "" || !newReps) {
             alert("Please enter both weight and reps");
             return;
           }
