@@ -167,31 +167,18 @@ MCP (Model Context Protocol) server for workout analysis and planning via Claude
 - **`create_workout`**: Create workout template. Params: `name`, `exerciseIds` (comma-separated)
 
 ### Architecture
-- SSE transport on port 3001 (Claude Desktop connects via `http://100.75.94.59:3001/sse`)
+- Stdio transport over SSH (Claude Desktop launches via `ssh bcransto@100.75.94.59 node ...`)
 - Direct SQLite access to `../lift-logger-api/data/liftlogger.db` (WAL mode for concurrent reads)
-- Deps: `@modelcontextprotocol/sdk`, `better-sqlite3`, `express`
+- Deps: `@modelcontextprotocol/sdk`, `better-sqlite3`
 
 ### Claude Desktop Config
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "lift-logger": {
-      "url": "http://100.75.94.59:3001/sse"
-    }
-  }
-}
-```
+Configured in `~/Library/Application Support/Claude/claude_desktop_config.json` using SSH stdio transport (same pattern as other MCP servers).
 
 ### Deployment
 ```bash
 # After git push + pull on Pi:
 ssh bcransto@pinto "cd ~/lift-logger-repo/lift-logger-mcp && npm install"
-ssh bcransto@pinto "sudo systemctl restart lift-logger-mcp"
-
-# Service management
-sudo systemctl status lift-logger-mcp
-journalctl -u lift-logger-mcp -f
+# No service restart needed — Claude Desktop launches the process on demand via SSH
 ```
 
 ## Code Patterns
