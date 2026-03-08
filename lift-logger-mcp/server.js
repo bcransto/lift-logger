@@ -1,6 +1,5 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
-const { SSEServerTransport } = require('@modelcontextprotocol/sdk/server/sse.js');
-const express = require('express');
+const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { listExercises, getExerciseHistory, getPersonalRecords, createExercise } = require('./tools/exercises');
 const { listWorkouts, getWorkoutHistory, createWorkout } = require('./tools/workouts');
 const { getVolumeSummary, queryRecords } = require('./tools/analysis');
@@ -152,39 +151,11 @@ server.tool(
   }
 );
 
-// --- SSE Transport ---
+// --- Stdio Transport ---
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-
-// Store active transports by session ID
-const transports = {};
-
-app.get('/sse', async (req, res) => {
-  const transport = new SSEServerTransport('/messages', res);
-  transports[transport.sessionId] = transport;
-
-  res.on('close', () => {
-    delete transports[transport.sessionId];
-  });
-
+async function main() {
+  const transport = new StdioServerTransport();
   await server.connect(transport);
-});
+}
 
-app.post('/messages', async (req, res) => {
-  const sessionId = req.query.sessionId;
-  const transport = transports[sessionId];
-  if (!transport) {
-    return res.status(400).json({ error: 'Unknown session' });
-  }
-  await transport.handlePostMessage(req, res);
-});
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', server: 'lift-logger-mcp' });
-});
-
-app.listen(PORT, () => {
-  console.log(`Lift Logger MCP server running on port ${PORT}`);
-  console.log(`SSE endpoint: http://localhost:${PORT}/sse`);
-});
+main().catch(console.error);
