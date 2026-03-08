@@ -124,7 +124,7 @@ git push origin main
 ssh bcransto@pinto "cd ~/lift-logger-repo && git pull"
 
 # Copy frontend files to public/ (gitignored, must be done after pull)
-ssh bcransto@pinto "cd ~/lift-logger-repo && cp index.html manifest.json sw.js lift-logger-api/public/ && cp -r icons lift-logger-api/public/"
+ssh bcransto@pinto "cd ~/lift-logger-repo && cp index.html manifest.json sw.js lift-logger-api/public/"
 
 # Restart service
 ssh bcransto@pinto "sudo systemctl restart lift-logger"
