@@ -116,16 +116,21 @@ The companion backend is in `lift-logger-api/`:
 # Hostname: pinto
 # Tailscale: 100.75.94.59
 
-# Copy frontend files to public/ before deploying
-cp index.html manifest.json sw.js lift-logger-api/public/
-cp -r icons lift-logger-api/public/
+# Pi repo is at ~/lift-logger-repo (cloned from GitHub)
+# App runs from ~/lift-logger-repo/lift-logger-api/
 
-# Copy to Pi
-scp -r lift-logger-api/{server.js,package.json,db,routes,scripts,public} bcransto@pinto:~/lift-logger/
+# Deploy: push to GitHub, then pull on Pi
+git push origin main
+ssh bcransto@pinto "cd ~/lift-logger-repo && git pull"
 
-# On Pi: rebuild native modules and restart
-ssh bcransto@pinto "cd ~/lift-logger && rm -rf node_modules && npm install"
-sudo systemctl restart lift-logger
+# Copy frontend files to public/ (gitignored, must be done after pull)
+ssh bcransto@pinto "cd ~/lift-logger-repo && cp index.html manifest.json sw.js lift-logger-api/public/ && cp -r icons lift-logger-api/public/"
+
+# Restart service
+ssh bcransto@pinto "sudo systemctl restart lift-logger"
+
+# If dependencies changed:
+ssh bcransto@pinto "cd ~/lift-logger-repo/lift-logger-api && npm install"
 ```
 
 ### Service management (run on Pi)
