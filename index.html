@@ -1,0 +1,2979 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <link rel="icon" href="icons/favicon.ico">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007aff">
+    <title>Lift Logger v2</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #f2f2f7;
+        color: #000;
+        font-size: 17px;
+        line-height: 1.4;
+        padding-bottom: env(safe-area-inset-bottom);
+        overflow-x: hidden;
+      }
+
+      .view {
+        display: none;
+        min-height: 100vh;
+      }
+
+      .view.active {
+        display: block;
+      }
+
+      .header {
+        background: #fff;
+        border-bottom: 1px solid #e5e5ea;
+        padding: 12px 16px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+
+      .header-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .back-button,
+      .header-action {
+        color: #007aff;
+        text-decoration: none;
+        font-size: 17px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        font-weight: 500;
+      }
+
+      .header-title {
+        font-size: 17px;
+        font-weight: 600;
+        text-align: center;
+        flex: 1;
+      }
+
+      .section-title {
+        color: #8e8e93;
+        font-size: 13px;
+        text-transform: uppercase;
+        margin: 24px 16px 8px;
+        font-weight: 500;
+      }
+
+      .list-container {
+        background: #fff;
+        margin: 0 16px 16px;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid #e5e5ea;
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      .list-item:last-child {
+        border-bottom: none;
+      }
+
+      .list-item:active {
+        background: #f2f2f7;
+      }
+
+      .list-item-title {
+        font-size: 17px;
+      }
+
+      .list-item-subtitle {
+        font-size: 15px;
+        color: #8e8e93;
+        margin-top: 2px;
+      }
+
+      .list-item-arrow {
+        color: #c7c7cc;
+        font-size: 20px;
+      }
+
+      /* Edit and Delete buttons */
+      .edit-btn {
+        background: #007aff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-right: 8px;
+      }
+
+      .edit-btn:hover {
+        background: #0056cc;
+      }
+
+      .restore-btn {
+        background: #007aff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .restore-btn:hover {
+        background: #0056cc;
+      }
+
+      .delete-btn {
+        background: #ff3b30;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .delete-btn:hover {
+        background: #d70015;
+      }
+
+      /* Deleted exercises */
+      .exercise-item.deleted {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .exercise-item.deleted .exercise-name {
+        color: #8e8e93;
+        font-style: italic;
+      }
+
+      .button-primary {
+        background: #007aff;
+        color: #fff;
+        border: none;
+        font-size: 17px;
+        padding: 16px;
+        width: calc(100% - 32px);
+        margin: 16px;
+        border-radius: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .button-primary:active {
+        opacity: 0.8;
+      }
+
+      .button-secondary {
+        background: #fff;
+        border: none;
+        color: #007aff;
+        font-size: 17px;
+        padding: 16px;
+        width: calc(100% - 32px);
+        margin: 0 16px 16px;
+        border-radius: 12px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      /* Exercise Entry Styles */
+      .info-section {
+        background: #fff;
+        margin: 16px;
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+
+      .info-row:last-child {
+        margin-bottom: 0;
+      }
+
+      .info-label {
+        color: #8e8e93;
+        font-size: 15px;
+      }
+
+      .info-value {
+        font-weight: 600;
+        font-size: 15px;
+      }
+
+      .pr-value {
+        color: #34c759;
+      }
+
+      .sets-container {
+        background: #fff;
+        margin: 0 16px 16px;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .set-row {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid #e5e5ea;
+        gap: 12px;
+      }
+
+      .set-row:last-child {
+        border-bottom: none;
+      }
+
+      /* Visual distinction for completed vs empty sets */
+      .set-row.has-data {
+        background: #f8f8f8;
+        border-left: 3px solid #34c759;
+      }
+
+      .set-row.has-data input {
+        font-weight: 600;
+        color: #000;
+      }
+
+      .set-row.empty {
+        background: white;
+        border-left: 3px solid #e5e5ea;
+      }
+
+      .set-row.empty input::placeholder {
+        color: #c7c7cc;
+      }
+
+      .set-number {
+        color: #8e8e93;
+        font-size: 15px;
+        width: 40px;
+      }
+
+      .set-inputs {
+        display: flex;
+        gap: 8px;
+        flex: 1;
+      }
+
+      .input-group {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        background: #f2f2f7;
+        border-radius: 8px;
+        padding: 0 12px;
+        height: 44px;
+      }
+
+      .input-group input {
+        border: none;
+        background: none;
+        font-size: 17px;
+        font-weight: 600;
+        text-align: center;
+        width: 100%;
+        outline: none;
+      }
+
+      .input-group input::placeholder {
+        color: #c7c7cc;
+        font-weight: 400;
+      }
+
+      .input-label {
+        color: #8e8e93;
+        font-size: 13px;
+        margin-left: 4px;
+      }
+
+      .previous-sets {
+        background: #fff;
+        margin: 0 16px 16px;
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .previous-set {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 15px;
+      }
+
+      .previous-set:last-child {
+        margin-bottom: 0;
+      }
+
+      .previous-set-number {
+        color: #8e8e93;
+      }
+
+      .previous-set-data {
+        font-weight: 500;
+      }
+
+      /* Active Workout View */
+      .exercise-item {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid #e5e5ea;
+        cursor: pointer;
+      }
+
+      .exercise-item:last-child {
+        border-bottom: none;
+      }
+
+      .exercise-check {
+        width: 24px;
+        height: 24px;
+        border: 2px solid #007aff;
+        border-radius: 50%;
+        margin-right: 16px;
+        position: relative;
+      }
+
+      .exercise-check.completed {
+        background: #007aff;
+      }
+
+      .exercise-check.completed::after {
+        content: "✓";
+        color: white;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 14px;
+      }
+
+      .exercise-info {
+        flex: 1;
+      }
+
+      .exercise-name {
+        font-size: 17px;
+      }
+
+      .exercise-sets {
+        font-size: 15px;
+        color: #8e8e93;
+        margin-top: 2px;
+      }
+
+      /* Sync Status */
+      .sync-status {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 24px;
+        font-size: 15px;
+        z-index: 200;
+        display: none;
+      }
+
+      .sync-status.show {
+        display: block;
+      }
+
+      /* Loading */
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #8e8e93;
+      }
+
+      /* Empty State */
+      .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #8e8e93;
+      }
+
+      .empty-state-title {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #000;
+      }
+
+      /* Modal */
+      .modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        z-index: 300;
+      }
+
+      .modal.show {
+        display: block;
+      }
+
+      .modal-content {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #fff;
+        border-radius: 12px 12px 0 0;
+        padding: 20px;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .modal-title {
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .modal-close {
+        color: #007aff;
+        font-size: 17px;
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      .form-label {
+        display: block;
+        font-size: 15px;
+        margin-bottom: 8px;
+        color: #8e8e93;
+      }
+
+      .form-input {
+        width: 100%;
+        padding: 12px;
+        font-size: 17px;
+        border: 1px solid #e5e5ea;
+        border-radius: 8px;
+        outline: none;
+      }
+
+      .form-input:focus {
+        border-color: #007aff;
+      }
+
+      /* Exercise Selector */
+      .exercise-selector {
+        max-height: 300px;
+        overflow-y: auto;
+        margin: -8px;
+      }
+
+      .exercise-option {
+        padding: 12px 16px;
+        cursor: pointer;
+        border-radius: 8px;
+      }
+
+      .exercise-option:hover {
+        background: #f2f2f7;
+      }
+
+      .exercise-option.selected {
+        background: #007aff;
+        color: white;
+      }
+
+      .workout-exercise-row {
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        background: #fff;
+        border-bottom: 1px solid #e5e5ea;
+      }
+
+      .workout-exercise-row:first-child {
+        border-radius: 8px 8px 0 0;
+      }
+
+      .workout-exercise-row:last-child {
+        border-bottom: none;
+        border-radius: 0 0 8px 8px;
+      }
+
+      .workout-exercise-row:only-child {
+        border-radius: 8px;
+      }
+
+      .workout-exercise-name {
+        flex: 1;
+        font-size: 16px;
+      }
+
+      .workout-exercise-actions button {
+        background: none;
+        border: none;
+        font-size: 18px;
+        padding: 4px 8px;
+        cursor: pointer;
+        color: #8e8e93;
+      }
+
+      .workout-exercise-actions button:active {
+        color: #007aff;
+      }
+
+      .workout-exercise-actions .delete-btn {
+        color: #ff3b30;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Sync Status -->
+    <div id="syncStatus" class="sync-status"></div>
+
+    <!-- Home View -->
+    <div id="homeView" class="view active">
+      <div class="header">
+        <div class="header-content">
+          <div></div>
+          <div class="header-title">Lift Logger</div>
+          <button class="header-action" onclick="app.sync()">Sync</button>
+        </div>
+      </div>
+
+      <div style="padding: 20px 0">
+        <div id="startWorkoutContainer">
+          <button class="button-primary" onclick="app.showWorkoutSelect()">
+            Start Workout
+          </button>
+        </div>
+
+        <div id="currentWorkoutsContainer"></div>
+
+        <div class="section-title">Quick Actions</div>
+        <div class="list-container">
+          <a class="list-item" onclick="app.showView('workoutsView')">
+            <div>
+              <div class="list-item-title">Manage Workouts</div>
+              <div class="list-item-subtitle">
+                Create and edit workout templates
+              </div>
+            </div>
+            <div class="list-item-arrow">›</div>
+          </a>
+          <a class="list-item" onclick="app.showView('exercisesView')">
+            <div>
+              <div class="list-item-title">Manage Exercises</div>
+              <div class="list-item-subtitle">Add or edit exercises</div>
+            </div>
+            <div class="list-item-arrow">›</div>
+          </a>
+          <a class="list-item" onclick="app.showView('historyView')">
+            <div>
+              <div class="list-item-title">Workout History</div>
+              <div class="list-item-subtitle">View past workouts</div>
+            </div>
+            <div class="list-item-arrow">›</div>
+          </a>
+        </div>
+
+        <div class="section-title">Sync</div>
+        <div class="list-container">
+          <a class="list-item" onclick="app.showConfigModal()">
+            <div>
+              <div class="list-item-title">Sync Configuration</div>
+              <div class="list-item-subtitle" id="configStatus">
+                Not configured
+              </div>
+            </div>
+            <div class="list-item-arrow">›</div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Workout View -->
+    <div id="workoutView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.cancelWorkout()">
+            Cancel
+          </button>
+          <div class="header-title" id="activeWorkoutTitle">Workout</div>
+          <button class="header-action" onclick="app.finishWorkout()">
+            Finish
+          </button>
+        </div>
+      </div>
+
+      <div id="workoutExercises" style="padding: 20px 0">
+        <!-- Exercise list will be populated here -->
+      </div>
+    </div>
+
+    <!-- Exercise Entry View -->
+    <div id="exerciseView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.backToWorkout()">
+            ‹ Back
+          </button>
+          <div class="header-title" id="exerciseTitle">Exercise</div>
+          <button class="header-action" onclick="app.saveExercise()">
+            Done
+          </button>
+        </div>
+      </div>
+
+      <div id="exerciseContent">
+        <!-- PR and previous workout info will be populated here -->
+      </div>
+    </div>
+
+    <!-- Workouts Management View -->
+    <div id="workoutsView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.showView('homeView')">
+            ‹ Back
+          </button>
+          <div class="header-title">Workouts</div>
+          <button class="header-action" onclick="app.showCreateWorkoutView()">
+            Add
+          </button>
+        </div>
+      </div>
+
+      <div id="workoutsList" style="padding: 20px 0">
+        <!-- Workouts list will be populated here -->
+      </div>
+    </div>
+
+    <!-- Create Workout View -->
+    <div id="createWorkoutView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.cancelCreateWorkout()">
+            ‹ Back
+          </button>
+          <div class="header-title" id="createWorkoutTitle">New Workout</div>
+          <button class="header-action" onclick="app.saveNewWorkout()">
+            Save
+          </button>
+        </div>
+      </div>
+      <div style="padding: 16px;">
+        <div class="form-group">
+          <label class="form-label">Workout Name</label>
+          <input type="text" class="form-input" id="newWorkoutName"
+                 placeholder="e.g., Push Day" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Exercises</label>
+          <div id="workoutExerciseList">
+            <div class="empty-state" style="padding: 20px 0;">
+              <p style="color: #8e8e93;">No exercises added yet</p>
+            </div>
+          </div>
+          <button class="button-secondary" onclick="app.showExercisePickerModal()"
+                  style="margin: 12px 0 0; width: 100%;">+ Add Exercise</button>
+        </div>
+        <div id="deleteWorkoutSection" style="display: none; padding: 32px 0 16px; text-align: center;">
+          <button onclick="app.deleteWorkout()" style="color: #ff3b30; background: none; border: none; font-size: 17px; cursor: pointer;">Delete Workout</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exercises Management View -->
+    <div id="exercisesView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.showView('homeView')">
+            ‹ Back
+          </button>
+          <div class="header-title">Exercises</div>
+          <button class="header-action" onclick="app.showAddExerciseModal()">
+            Add
+          </button>
+        </div>
+      </div>
+
+      <div style="padding: 12px 16px 0;">
+        <input type="text" id="exerciseSearch" placeholder="Search exercises..."
+          oninput="app.filterExerciseList(this.value, 'exercisesListContainer')"
+          style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box;">
+      </div>
+
+      <div id="exercisesList" style="padding: 20px 0">
+        <!-- Exercises list will be populated here -->
+      </div>
+    </div>
+
+    <!-- History View -->
+    <div id="historyView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.showView('homeView')">
+            ‹ Back
+          </button>
+          <div class="header-title">History</div>
+          <div></div>
+        </div>
+      </div>
+
+      <div id="historyContent" style="padding: 20px 0">
+        <!-- History will be populated here -->
+      </div>
+    </div>
+
+    <div id="workoutDetailsView" class="view">
+      <div class="header">
+        <div class="header-content">
+          <button class="back-button" onclick="app.showView('historyView')">
+            ‹ Back
+          </button>
+          <div class="header-title" id="workoutDetailsTitle">Workout Details</div>
+          <div id="workoutDetailsHeaderAction"></div>
+        </div>
+      </div>
+
+      <div id="workoutDetailsContent" style="padding: 20px 0">
+        <!-- Workout details will be populated here -->
+      </div>
+    </div>
+
+
+    <!-- Modals -->
+    <div id="modal" class="modal">
+      <div class="modal-content" id="modalContent">
+        <!-- Modal content will be populated dynamically -->
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
+    <script>
+      // Database Service Class
+      // Offline-first data store using IndexedDB via Dexie.js
+      // All data operations are async
+      // Sync with Pi backend handled by SyncService (Phase 4)
+      class DatabaseService {
+        constructor() {
+          this.db = new Dexie('LiftLogger');
+          this.db.version(1).stores({
+            exercises: 'id, name, updatedAt',
+            workouts: 'id, name, updatedAt',
+            records: 'id, date, exerciseId, workoutId, [date+workoutId], updatedAt',
+            activeSession: 'id',
+            syncMeta: 'key'
+          });
+          this.exerciseMap = new Map();
+          this.workoutMap = new Map();
+        }
+
+        generateId(prefix) {
+          return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
+
+        async initialize() {
+          // Migrate from localStorage if exists
+          const oldData = localStorage.getItem('weightTracker_data');
+          if (oldData) {
+            try {
+              const data = JSON.parse(oldData);
+              await this.migrateFromLocalStorage(data);
+              localStorage.removeItem('weightTracker_data');
+              console.log('Migrated data from localStorage to IndexedDB');
+            } catch (error) {
+              console.error('Failed to migrate from localStorage:', error);
+            }
+          }
+
+          // Build lookup maps
+          await this.rebuildMaps();
+        }
+
+        async migrateFromLocalStorage(data) {
+          const now = Date.now();
+
+          await this.db.transaction('rw',
+            this.db.exercises, this.db.workouts, this.db.records,
+            async () => {
+              // Migrate exercises with updatedAt
+              if (data.exercises?.length) {
+                const exercises = data.exercises.map(ex => ({
+                  ...ex,
+                  updatedAt: ex.updatedAt || now
+                }));
+                await this.db.exercises.bulkPut(exercises);
+              }
+
+              // Migrate workouts with updatedAt
+              if (data.workouts?.length) {
+                const workouts = data.workouts.map(wo => ({
+                  ...wo,
+                  updatedAt: wo.updatedAt || now
+                }));
+                await this.db.workouts.bulkPut(workouts);
+              }
+
+              // Migrate records with updatedAt and ensure IDs
+              if (data.records?.length) {
+                const records = data.records.map(rec => ({
+                  ...rec,
+                  id: rec.id || this.generateId('rec'),
+                  updatedAt: rec.updatedAt || now
+                }));
+                await this.db.records.bulkPut(records);
+              }
+            }
+          );
+        }
+
+        async rebuildMaps() {
+          this.exerciseMap.clear();
+          this.workoutMap.clear();
+
+          const exercises = await this.db.exercises.toArray();
+          exercises.forEach(ex => this.exerciseMap.set(ex.id, ex));
+
+          const workouts = await this.db.workouts.toArray();
+          workouts.forEach(wo => this.workoutMap.set(wo.id, wo));
+        }
+
+        // Sync-related methods (for Phase 4)
+        async getChangesSince(timestamp) {
+          const exercises = await this.db.exercises.where('updatedAt').above(timestamp).toArray();
+          const workouts = await this.db.workouts.where('updatedAt').above(timestamp).toArray();
+          const records = await this.db.records.where('updatedAt').above(timestamp).toArray();
+          return { exercises, workouts, records };
+        }
+
+        async applyServerChanges(serverChanges) {
+          await this.db.transaction('rw',
+            this.db.exercises, this.db.workouts, this.db.records,
+            async () => {
+              for (const ex of serverChanges.exercises || []) {
+                const local = await this.db.exercises.get(ex.id);
+                if (!local || ex.updatedAt > local.updatedAt) {
+                  await this.db.exercises.put(ex);
+                }
+              }
+              for (const wo of serverChanges.workouts || []) {
+                const local = await this.db.workouts.get(wo.id);
+                if (!local || wo.updatedAt > local.updatedAt) {
+                  await this.db.workouts.put(wo);
+                }
+              }
+              for (const rec of serverChanges.records || []) {
+                const local = await this.db.records.get(rec.id);
+                if (!local || rec.updatedAt > local.updatedAt) {
+                  await this.db.records.put(rec);
+                }
+              }
+            }
+          );
+          await this.rebuildMaps();
+        }
+
+        async getLastSync() {
+          const meta = await this.db.syncMeta.get('lastSync');
+          return meta?.value || 0;
+        }
+
+        async setLastSync(timestamp) {
+          await this.db.syncMeta.put({ key: 'lastSync', value: timestamp });
+        }
+
+        async exportAllData() {
+          return {
+            exercises: await this.db.exercises.toArray(),
+            workouts: await this.db.workouts.toArray(),
+            records: await this.db.records.toArray()
+          };
+        }
+
+        async importAllData(data) {
+          await this.db.transaction('rw',
+            this.db.exercises, this.db.workouts, this.db.records,
+            async () => {
+              await this.db.exercises.clear();
+              await this.db.workouts.clear();
+              await this.db.records.clear();
+              if (data.exercises?.length) await this.db.exercises.bulkAdd(data.exercises);
+              if (data.workouts?.length) await this.db.workouts.bulkAdd(data.workouts);
+              if (data.records?.length) await this.db.records.bulkAdd(data.records);
+            }
+          );
+          await this.rebuildMaps();
+        }
+
+        // Data access methods (sync - use cached maps)
+        getExerciseName(exerciseId) {
+          return this.exerciseMap.get(exerciseId)?.name || "Unknown Exercise";
+        }
+
+        getWorkoutName(workoutId) {
+          return this.workoutMap.get(workoutId)?.name || "Unknown Workout";
+        }
+
+        async getLastWorkout(exerciseId, excludeDate = null) {
+          let query = this.db.records.where('exerciseId').equals(exerciseId);
+          let exerciseRecords = await query.toArray();
+
+          if (excludeDate) {
+            exerciseRecords = exerciseRecords.filter(r => r.date !== excludeDate);
+          }
+
+          if (!exerciseRecords.length) return null;
+
+          // Sort by date descending
+          exerciseRecords.sort((a, b) => b.date.localeCompare(a.date));
+          const lastDate = exerciseRecords[0].date;
+
+          return exerciseRecords.filter(r => r.date === lastDate);
+        }
+
+        async calculatePR(exerciseId) {
+          const exerciseRecords = await this.db.records
+            .where('exerciseId')
+            .equals(exerciseId)
+            .toArray();
+
+          if (!exerciseRecords.length) return null;
+
+          // Group by weight and find max reps for each weight
+          const weightMap = {};
+          exerciseRecords.forEach((record) => {
+            if (
+              !weightMap[record.weight] ||
+              record.reps > weightMap[record.weight].reps
+            ) {
+              weightMap[record.weight] = {
+                weight: record.weight,
+                reps: record.reps,
+                date: record.date,
+              };
+            }
+          });
+
+          // Find the highest weight with its max reps
+          let pr = null;
+          let maxWeight = 0;
+
+          Object.values(weightMap).forEach((record) => {
+            if (record.weight > maxWeight) {
+              maxWeight = record.weight;
+              pr = record;
+            }
+          });
+
+          return pr;
+        }
+
+        // Data modification methods (all async)
+        async addExercise(name) {
+          const exercise = {
+            id: this.generateId('ex'),
+            name: name,
+            updatedAt: Date.now()
+          };
+          await this.db.exercises.add(exercise);
+          this.exerciseMap.set(exercise.id, exercise);
+          return exercise;
+        }
+
+        async updateExercise(exerciseId, newName) {
+          const exercise = this.exerciseMap.get(exerciseId);
+          if (exercise) {
+            exercise.name = newName;
+            exercise.updatedAt = Date.now();
+            await this.db.exercises.put(exercise);
+            return true;
+          }
+          return false;
+        }
+
+        async addWorkout(name, exercises) {
+          const workout = {
+            id: this.generateId('workout'),
+            name: name,
+            exercises: exercises,
+            updatedAt: Date.now()
+          };
+          await this.db.workouts.add(workout);
+          this.workoutMap.set(workout.id, workout);
+          return workout;
+        }
+
+        async updateWorkout(id, name, exercises) {
+          const workout = { id, name, exercises, updatedAt: Date.now() };
+          await this.db.workouts.put(workout);
+          this.workoutMap.set(id, workout);
+          return workout;
+        }
+
+        async deleteWorkout(id) {
+          await this.db.workouts.delete(id);
+          this.workoutMap.delete(id);
+        }
+
+        async addRecords(records) {
+          const now = Date.now();
+          const recordsWithMeta = records.map(rec => ({
+            ...rec,
+            id: rec.id || this.generateId('rec'),
+            updatedAt: now
+          }));
+          await this.db.records.bulkAdd(recordsWithMeta);
+        }
+
+        async softDeleteExercise(exerciseId) {
+          const exercise = this.exerciseMap.get(exerciseId);
+          if (exercise) {
+            exercise.isDeleted = true;
+            exercise.updatedAt = Date.now();
+            await this.db.exercises.put(exercise);
+            return true;
+          }
+          return false;
+        }
+
+        async getDeletedExercises() {
+          return await this.db.exercises.filter(ex => ex.isDeleted).toArray();
+        }
+
+        async restoreExercise(exerciseId) {
+          const exercise = this.exerciseMap.get(exerciseId);
+          if (exercise && exercise.isDeleted) {
+            exercise.isDeleted = false;
+            exercise.updatedAt = Date.now();
+            await this.db.exercises.put(exercise);
+            return true;
+          }
+          return false;
+        }
+
+        async getWorkoutRecords(date, workoutId) {
+          return await this.db.records
+            .where('[date+workoutId]')
+            .equals([date, workoutId])
+            .toArray();
+        }
+
+        async getRecentWorkouts(limit = 30) {
+          const allRecords = await this.db.records.toArray();
+
+          // Group by date and workout
+          const workoutMap = {};
+          allRecords.forEach((record) => {
+            const key = `${record.date}_${record.workoutId}`;
+            if (!workoutMap[key]) {
+              workoutMap[key] = {
+                date: record.date,
+                workoutId: record.workoutId,
+                exercises: new Set(),
+              };
+            }
+            workoutMap[key].exercises.add(record.exerciseId);
+          });
+
+          // Convert to array and sort by date
+          const workouts = Object.values(workoutMap);
+          workouts.sort((a, b) => b.date.localeCompare(a.date));
+
+          return workouts.slice(0, limit);
+        }
+
+        async deleteWorkoutRecords(date, workoutId) {
+          const toDelete = await this.db.records
+            .where('[date+workoutId]')
+            .equals([date, workoutId])
+            .toArray();
+
+          const ids = toDelete.map(r => r.id);
+          await this.db.records.bulkDelete(ids);
+          return ids.length;
+        }
+
+        async updateRecord(date, workoutId, exerciseId, setNumber, newWeight, newReps) {
+          const records = await this.db.records
+            .where('[date+workoutId]')
+            .equals([date, workoutId])
+            .toArray();
+
+          const record = records.find(r =>
+            r.exerciseId === exerciseId && r.set === setNumber
+          );
+
+          if (record) {
+            record.weight = newWeight;
+            record.reps = newReps;
+            record.updatedAt = Date.now();
+            await this.db.records.put(record);
+            return true;
+          }
+          return false;
+        }
+
+        async deleteRecord(date, workoutId, exerciseId, setNumber) {
+          const records = await this.db.records
+            .where('[date+workoutId]')
+            .equals([date, workoutId])
+            .toArray();
+
+          const record = records.find(r =>
+            r.exerciseId === exerciseId && r.set === setNumber
+          );
+
+          if (record) {
+            await this.db.records.delete(record.id);
+            return true;
+          }
+          return false;
+        }
+
+        // Get all exercises (for list display)
+        async getAllExercises() {
+          return await this.db.exercises.toArray();
+        }
+
+        // Get all workouts (for list display)
+        async getAllWorkouts() {
+          return await this.db.workouts.toArray();
+        }
+
+        // Get records by date
+        async getRecordsByDate(date) {
+          return await this.db.records.where('date').equals(date).toArray();
+        }
+
+        // Get records by exercise ID
+        async getRecordsByExercise(exerciseId) {
+          return await this.db.records.where('exerciseId').equals(exerciseId).toArray();
+        }
+
+        // Check if exercise has any records
+        async exerciseHasRecords(exerciseId) {
+          const count = await this.db.records.where('exerciseId').equals(exerciseId).count();
+          return count > 0;
+        }
+      }
+
+      // Sync Service Class
+      // Handles bidirectional sync with Pi backend
+      class SyncService {
+        constructor(dataStore) {
+          this.dataStore = dataStore;
+          this.apiUrl = localStorage.getItem('liftLogger_apiUrl') || '';
+          this.syncInProgress = false;
+        }
+
+        setConfig(url) {
+          this.apiUrl = url.replace(/\/$/, ''); // Remove trailing slash
+          localStorage.setItem('liftLogger_apiUrl', this.apiUrl);
+        }
+
+        getConfig() {
+          return {
+            apiUrl: this.apiUrl
+          };
+        }
+
+        isConfigured() {
+          return !!this.apiUrl;
+        }
+
+        async checkConnection() {
+          if (!this.apiUrl) return false;
+          try {
+            const response = await fetch(`${this.apiUrl}/health`, {
+              signal: AbortSignal.timeout(5000)
+            });
+            return response.ok;
+          } catch {
+            return false;
+          }
+        }
+
+        async sync() {
+          // Mutex: prevent double sync
+          if (this.syncInProgress) return { skipped: true };
+          this.syncInProgress = true;
+
+          try {
+            const lastSync = await this.dataStore.getLastSync() || 0;
+
+            // Get local changes since last sync
+            const localChanges = await this.dataStore.getChangesSince(lastSync);
+
+            // Send to server, get server changes back
+            const response = await fetch(`${this.apiUrl}/api/sync`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ lastSync, changes: localChanges }),
+              signal: AbortSignal.timeout(30000)
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+
+            const { serverChanges, syncTimestamp } = await response.json();
+
+            // Apply server changes (server wins if updatedAt is newer)
+            await this.dataStore.applyServerChanges(serverChanges);
+
+            // Save new sync timestamp (use server's timestamp to avoid clock skew)
+            await this.dataStore.setLastSync(syncTimestamp);
+
+            return {
+              success: true,
+              sent: {
+                exercises: localChanges.exercises?.length || 0,
+                workouts: localChanges.workouts?.length || 0,
+                records: localChanges.records?.length || 0
+              },
+              received: {
+                exercises: serverChanges.exercises?.length || 0,
+                workouts: serverChanges.workouts?.length || 0,
+                records: serverChanges.records?.length || 0
+              }
+            };
+          } catch (error) {
+            console.error('Sync failed:', error);
+            return { success: false, error: error.message };
+          } finally {
+            this.syncInProgress = false;
+          }
+        }
+
+        async getLastSyncTime() {
+          const ts = await this.dataStore.getLastSync();
+          return ts ? new Date(ts) : null;
+        }
+
+        formatLastSync(date) {
+          if (!date) return 'Never';
+          const now = new Date();
+          const diffMs = now - date;
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHours = Math.floor(diffMins / 60);
+          const diffDays = Math.floor(diffHours / 24);
+
+          if (diffMins < 1) return 'Just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          if (diffHours < 24) return `${diffHours}h ago`;
+          if (diffDays < 7) return `${diffDays}d ago`;
+          return date.toLocaleDateString();
+        }
+      }
+
+      // Main App Class
+      class WeightTrackerApp {
+        constructor() {
+          this.dataStore = new DatabaseService();
+          this.syncService = new SyncService(this.dataStore);
+          this.currentWorkout = null;
+          this.currentExercise = null;
+          this.currentSets = [];
+          this.sessionSaveTimeout = null;
+        }
+
+        // Session persistence methods
+        scheduleSessionSave() {
+          if (this.sessionSaveTimeout) clearTimeout(this.sessionSaveTimeout);
+          this.sessionSaveTimeout = setTimeout(() => this.saveWorkoutSession(), 300);
+        }
+
+        saveWorkoutSession() {
+          if (!this.currentWorkout) return;
+          const session = {
+            version: 1,
+            workoutId: this.currentWorkout.id,
+            date: this.currentWorkout.date,
+            startedAt: this.currentWorkout.startedAt,
+            completedExercises: this.currentWorkout.completedExercises,
+            addedExercises: this.currentWorkout.addedExercises || [],
+            exerciseSets: {
+              ...this.currentWorkout.exerciseSets,
+              [this.currentExercise]: this.currentSets
+            },
+            currentExerciseId: this.currentExercise
+          };
+          localStorage.setItem('liftLogger_activeSession', JSON.stringify(session));
+        }
+
+        loadWorkoutSession() {
+          const data = localStorage.getItem('liftLogger_activeSession');
+          if (!data) return null;
+          try {
+            const session = JSON.parse(data);
+            // Only return session if it's from today
+            if (session.date === this.getTodaysDate()) {
+              return session;
+            }
+            // Clear stale session from previous day
+            this.clearWorkoutSession();
+            return null;
+          } catch {
+            return null;
+          }
+        }
+
+        clearWorkoutSession() {
+          localStorage.removeItem('liftLogger_activeSession');
+        }
+
+        getTodaysDate() {
+          return new Date().toLocaleDateString('en-CA');
+        }
+
+        async getCurrentWorkouts() {
+          const today = this.getTodaysDate();
+
+          // Filter records for today's date
+          const todaysRecords = await this.dataStore.getRecordsByDate(today);
+
+          // Group by workoutId and track unique exercises and earliest timestamp
+          const workoutMap = new Map();
+
+          todaysRecords.forEach(record => {
+            if (!workoutMap.has(record.workoutId)) {
+              workoutMap.set(record.workoutId, {
+                exercises: new Set(),
+                earliestTimestamp: record.timestamp || null
+              });
+            }
+            const workoutData = workoutMap.get(record.workoutId);
+            workoutData.exercises.add(record.exerciseId);
+
+            // Update earliest timestamp
+            if (record.timestamp && (!workoutData.earliestTimestamp || record.timestamp < workoutData.earliestTimestamp)) {
+              workoutData.earliestTimestamp = record.timestamp;
+            }
+          });
+
+          // Convert to array of workout objects
+          const workouts = [];
+          workoutMap.forEach((data, workoutId) => {
+            workouts.push({
+              workoutId: workoutId,
+              exerciseCount: data.exercises.size,
+              startedAt: data.earliestTimestamp
+            });
+          });
+
+          return workouts;
+        }
+
+        async loadCurrentWorkouts() {
+          const container = document.getElementById("currentWorkoutsContainer");
+          if (!container) return;
+
+          const currentWorkouts = await this.getCurrentWorkouts();
+          
+          if (currentWorkouts.length === 0) {
+            container.innerHTML = "";
+            return;
+          }
+          
+          // Build HTML for current workouts section with visual distinction
+          let html = `
+            <div class="section-title" style="color: #34c759;">
+              <span style="margin-right: 8px;">⏱</span>Current Workouts
+            </div>
+            <div class="list-container" style="background-color: #f0f9f1; border: 1px solid #34c759; border-radius: 8px; overflow: hidden;">
+          `;
+          
+          currentWorkouts.forEach((workout, index) => {
+            const workoutData = this.dataStore.workoutMap.get(workout.workoutId);
+            const workoutName = workoutData ? workoutData.name : 'Unknown Workout';
+            const exerciseText = workout.exerciseCount === 1 ? '1 exercise' : `${workout.exerciseCount} exercises`;
+            
+            // Calculate time elapsed
+            const timeElapsed = workout.startedAt ? this.getTimeElapsed(workout.startedAt) : '';
+            const timeText = timeElapsed ? ` • Started ${timeElapsed}` : '';
+            
+            // Add border between multiple workouts
+            const borderStyle = index > 0 ? 'border-top: 1px solid #e5e5ea;' : '';
+            
+            html += `
+              <a class="list-item" onclick="app.resumeCurrentWorkout('${workout.workoutId}')" style="${borderStyle}">
+                <div>
+                  <div class="list-item-title">${workoutName}</div>
+                  <div class="list-item-subtitle" style="color: #34c759;">${exerciseText} logged${timeText}</div>
+                </div>
+                <div class="list-item-arrow">›</div>
+              </a>
+            `;
+          });
+          
+          html += '</div>';
+          container.innerHTML = html;
+        }
+
+        async initialize() {
+          await this.dataStore.initialize();
+          this.updateStartWorkoutButton();
+          await this.loadCurrentWorkouts();
+          this.updateConfigStatus();
+
+          // Session persistence: save on visibility change and before unload
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && this.currentWorkout) {
+              this.saveWorkoutSession();
+            }
+          });
+          window.addEventListener('beforeunload', () => {
+            if (this.currentWorkout) {
+              this.saveWorkoutSession();
+            }
+          });
+        }
+
+        async updateConfigStatus() {
+          const status = document.getElementById("configStatus");
+          if (this.syncService.isConfigured()) {
+            const lastSync = await this.syncService.getLastSyncTime();
+            const lastSyncText = this.syncService.formatLastSync(lastSync);
+            status.textContent = `Last sync: ${lastSyncText}`;
+            status.style.color = "#34c759";
+          } else {
+            status.textContent = "Not configured";
+            status.style.color = "#ff3b30";
+          }
+        }
+
+        updateStartWorkoutButton() {
+          const container = document.getElementById("startWorkoutContainer");
+          if (!container) return;
+
+          container.innerHTML = `
+            <button class="button-primary" onclick="app.showWorkoutSelect()">
+              Start Workout
+            </button>
+          `;
+        }
+
+        getTimeElapsed(startedAt) {
+          if (!startedAt) return "some time ago";
+          
+          const now = new Date();
+          const startTime = new Date(startedAt);
+          const diffMs = now - startTime;
+          const diffMinutes = Math.floor(diffMs / (1000 * 60));
+          const diffHours = Math.floor(diffMinutes / 60);
+          
+          if (diffHours > 0) {
+            return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+          } else if (diffMinutes > 0) {
+            return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+          } else {
+            return "just now";
+          }
+        }
+
+
+        showView(viewId) {
+          document.querySelectorAll(".view").forEach((view) => {
+            view.classList.remove("active");
+          });
+          document.getElementById(viewId).classList.add("active");
+
+          // Load view-specific content
+          switch (viewId) {
+            case "homeView":
+              this.loadCurrentWorkouts();
+              break;
+            case "workoutsView":
+              this.loadWorkoutsList();
+              break;
+            case "createWorkoutView":
+              break;
+            case "exercisesView":
+              this.loadExercisesList();
+              break;
+            case "historyView":
+              this.loadHistory();
+              break;
+          }
+        }
+
+        showSyncStatus(message, duration = 2000) {
+          const status = document.getElementById("syncStatus");
+          status.textContent = message;
+          status.classList.add("show");
+
+          // Clear any existing timeout
+          if (this.syncStatusTimeout) {
+            clearTimeout(this.syncStatusTimeout);
+          }
+
+          // Set new timeout
+          this.syncStatusTimeout = setTimeout(() => {
+            status.classList.remove("show");
+            this.syncStatusTimeout = null;
+          }, duration);
+        }
+
+        clearSyncStatus() {
+          const status = document.getElementById("syncStatus");
+          status.classList.remove("show");
+          if (this.syncStatusTimeout) {
+            clearTimeout(this.syncStatusTimeout);
+            this.syncStatusTimeout = null;
+          }
+        }
+
+        async sync() {
+          if (!this.syncService.isConfigured()) {
+            this.showSyncStatus("Sync not configured", 2000);
+            return;
+          }
+
+          this.showSyncStatus("Syncing...", 60000);
+
+          const result = await this.syncService.sync();
+
+          if (result.skipped) {
+            this.showSyncStatus("Sync already in progress", 2000);
+          } else if (result.success) {
+            const totalSent = result.sent.exercises + result.sent.workouts + result.sent.records;
+            const totalReceived = result.received.exercises + result.received.workouts + result.received.records;
+            this.showSyncStatus(`Synced: ${totalSent} sent, ${totalReceived} received`, 3000);
+            // Refresh current view in case data changed
+            await this.dataStore.rebuildMaps();
+            this.updateConfigStatus();
+          } else {
+            this.showSyncStatus(`Sync failed: ${result.error}`, 4000);
+          }
+        }
+
+        // Workout Management
+        async showWorkoutSelect() {
+          const workouts = Array.from(this.dataStore.workoutMap.values());
+
+          if (workouts.length === 0) {
+            this.showCreateWorkoutView();
+            return;
+          }
+
+          // Sort by most recently performed, then never-performed alphabetically
+          const recentWorkouts = await this.dataStore.getRecentWorkouts();
+          const lastPerformed = {};
+          for (const rw of recentWorkouts) {
+            if (!lastPerformed[rw.workoutId]) {
+              lastPerformed[rw.workoutId] = rw.date;
+            }
+          }
+          workouts.sort((a, b) => {
+            const dateA = lastPerformed[a.id];
+            const dateB = lastPerformed[b.id];
+            if (dateA && dateB) return dateB.localeCompare(dateA);
+            if (dateA && !dateB) return -1;
+            if (!dateA && dateB) return 1;
+            return a.name.localeCompare(b.name);
+          });
+
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Select Workout</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="list-container" style="margin: 0">
+                        ${workouts
+                          .map(
+                            (workout) => `
+                            <div class="list-item" onclick="app.startWorkout('${workout.id}')">
+                                <div>
+                                    <div class="list-item-title">${workout.name}</div>
+                                    <div class="list-item-subtitle">${workout.exercises.length} exercises</div>
+                                </div>
+                                <div class="list-item-arrow">›</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                    <button class="button-secondary" onclick="app.showCreateWorkoutView()">Create New Workout</button>
+                `;
+
+          modal.classList.add("show");
+        }
+
+        async startWorkout(workoutId) {
+          const today = this.getTodaysDate();
+
+          // Clean up any existing records for this workout and date
+          // This prevents accumulation during testing/multiple starts
+          await this.dataStore.deleteWorkoutRecords(today, workoutId);
+
+          this.currentWorkout = {
+            id: workoutId,
+            date: today,
+            startedAt: new Date().toISOString(),
+            completedExercises: [],
+            addedExercises: [],
+            exerciseSets: {},
+          };
+
+          // Save session state
+          this.saveWorkoutSession();
+
+          this.closeModal();
+          this.showView("workoutView");
+          await this.loadWorkoutExercises();
+        }
+
+        async resumeCurrentWorkout(workoutId) {
+          const today = this.getTodaysDate();
+
+          // First check for saved session (includes in-progress set data)
+          const savedSession = this.loadWorkoutSession();
+          if (savedSession && savedSession.workoutId === workoutId) {
+            // Restore from saved session
+            this.currentWorkout = {
+              id: savedSession.workoutId,
+              date: savedSession.date,
+              startedAt: savedSession.startedAt,
+              completedExercises: savedSession.completedExercises || [],
+              addedExercises: savedSession.addedExercises || [],
+              exerciseSets: savedSession.exerciseSets || {},
+            };
+            this.currentExercise = savedSession.currentExerciseId || null;
+            this.currentSets = savedSession.exerciseSets?.[savedSession.currentExerciseId] || [];
+
+            this.showView("workoutView");
+            await this.loadWorkoutExercises();
+            return;
+          }
+
+          // Fall back to reconstructing from saved records
+          const todaysRecords = await this.dataStore.getWorkoutRecords(today, workoutId);
+
+          // Get the timestamp from the first record, or use current time
+          const startedAt = todaysRecords.length > 0 && todaysRecords[0].timestamp
+            ? todaysRecords[0].timestamp
+            : new Date().toISOString();
+
+          // Create currentWorkout object with same structure as startWorkout
+          this.currentWorkout = {
+            id: workoutId,
+            date: today,
+            startedAt: startedAt,
+            completedExercises: [],
+            addedExercises: [],
+            exerciseSets: {},
+          };
+
+          // Group records by exercise and reconstruct the workout state
+          const exerciseMap = new Map();
+          todaysRecords.forEach(record => {
+            if (!exerciseMap.has(record.exerciseId)) {
+              exerciseMap.set(record.exerciseId, []);
+            }
+            exerciseMap.get(record.exerciseId).push(record);
+          });
+
+          // Populate exerciseSets and completedExercises
+          exerciseMap.forEach((records, exerciseId) => {
+            // Sort records by set number
+            records.sort((a, b) => a.set - b.set);
+
+            // Convert records to the format used in exerciseSets
+            this.currentWorkout.exerciseSets[exerciseId] = records.map(record => ({
+              weight: record.weight,
+              reps: record.reps,
+              setNumber: record.set
+            }));
+
+            // Mark exercise as completed
+            this.currentWorkout.completedExercises.push(exerciseId);
+          });
+
+          this.showView("workoutView");
+          await this.loadWorkoutExercises();
+        }
+
+        async loadWorkoutExercises() {
+          const workout = this.dataStore.workoutMap.get(this.currentWorkout.id);
+          document.getElementById("activeWorkoutTitle").textContent = workout.name;
+
+          // Combine original workout exercises with added exercises
+          const originalExercises = workout.exercises.map(ex => ({
+            exerciseId: ex.exerciseId,
+            isAdded: false
+          }));
+
+          const addedExercises = (this.currentWorkout.addedExercises || []).map(exerciseId => ({
+            exerciseId: exerciseId,
+            isAdded: true
+          }));
+
+          const allExercises = [...originalExercises, ...addedExercises];
+
+          const container = document.getElementById("workoutExercises");
+          container.innerHTML = `
+                    <div class="list-container">
+                        ${allExercises
+                          .map((ex) => {
+                            const exercise = this.dataStore.exerciseMap.get(
+                              ex.exerciseId
+                            );
+                            const isCompleted =
+                              this.currentWorkout &&
+                              this.currentWorkout.completedExercises &&
+                              Array.isArray(this.currentWorkout.completedExercises) &&
+                              this.currentWorkout.completedExercises.includes(ex.exerciseId);
+                            const exerciseSets = this.currentWorkout.exerciseSets[ex.exerciseId] || [];
+                            const hasLoggedSets = exerciseSets.length > 0;
+                            const isDeleted = exercise.isDeleted;
+                            const exerciseName = isDeleted ? `${exercise.name} (Deleted)` : exercise.name;
+                            const itemClass = isDeleted ? "exercise-item deleted" : "exercise-item";
+                            const onclick = isDeleted ? "" : `onclick="app.startExercise('${ex.exerciseId}')"`;
+
+                            // Determine status text
+                            let statusText;
+                            if (isCompleted || hasLoggedSets) {
+                              // Count sets with actual data from exerciseSets
+                              const recordedSets = exerciseSets.filter(s => s.weight && s.reps).length;
+                              statusText = `${recordedSets} set${recordedSets !== 1 ? 's' : ''} recorded`;
+                            } else if (this.currentExercise === ex.exerciseId && this.currentSets && this.currentSets.length > 0) {
+                              // Exercise has saved sets from current session - only count sets with actual data
+                              const completedSets = this.currentSets.filter(s => s.weight && s.reps).length;
+                              statusText = `${completedSets} sets recorded`;
+                            } else {
+                              statusText = "Not started";
+                            }
+
+                            return `
+                                <div class="${itemClass}" ${onclick}>
+                                    <div class="exercise-check ${
+                                      isCompleted ? "completed" : ""
+                                    }"></div>
+                                    <div class="exercise-info">
+                                        <div class="exercise-name">${exerciseName}</div>
+                                        <div class="exercise-sets">${statusText}</div>
+                                    </div>
+                                </div>
+                            `;
+                          })
+                          .join("")}
+                    </div>
+                    <button class="button-secondary" onclick="app.showAddExerciseToWorkout()" style="margin: 16px 20px;">
+                        Add Exercise
+                    </button>
+                `;
+        }
+
+        showAddExerciseToWorkout() {
+          const workout = this.dataStore.workoutMap.get(this.currentWorkout.id);
+
+          // Get exercise IDs already in workout (template + added)
+          const templateExerciseIds = workout.exercises.map(ex => ex.exerciseId);
+          const addedExerciseIds = this.currentWorkout.addedExercises;
+          const existingExerciseIds = [...templateExerciseIds, ...addedExerciseIds];
+
+          // Filter available exercises from cached map
+          const allExercises = Array.from(this.dataStore.exerciseMap.values());
+          const availableExercises = this.sortExercises(allExercises.filter(ex =>
+            !ex.isDeleted && !existingExerciseIds.includes(ex.id)
+          ));
+
+          if (availableExercises.length === 0) {
+            alert("No more exercises available to add to this workout.");
+            return;
+          }
+
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Add Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    ${this.renderSearchInput('addExerciseList')}
+                    <div class="list-container" id="addExerciseList" style="margin: 0">
+                        ${availableExercises
+                          .map(
+                            (exercise) => `
+                            <div class="list-item" onclick="app.addExerciseToWorkout('${exercise.id}')">
+                                <div class="list-item-title">${exercise.name}</div>
+                                <div class="list-item-arrow">›</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
+
+          modal.classList.add("show");
+        }
+
+        async addExerciseToWorkout(exerciseId) {
+          this.currentWorkout.addedExercises.push(exerciseId);
+          this.saveWorkoutSession();
+          this.closeModal();
+          await this.loadWorkoutExercises();
+        }
+
+        async startExercise(exerciseId) {
+          console.log('🏋️ startExercise called with exerciseId:', exerciseId);
+          console.log('📊 Current exercise state:', {
+            currentExercise: this.currentExercise,
+            currentSetsCount: this.currentSets ? this.currentSets.length : 0,
+            currentSetsWithData: this.currentSets ? this.currentSets.filter(s => s.weight && s.reps).length : 0
+          });
+
+          const isCompleted = this.currentWorkout.completedExercises.includes(exerciseId);
+          console.log('✅ Exercise completion status:', { exerciseId, isCompleted });
+
+          // Save current exercise sets before switching if we have a current exercise
+          if (this.currentExercise && this.currentSets && this.currentExercise !== exerciseId) {
+            console.log('💾 Saving current exercise sets before switching');
+            this.currentWorkout.exerciseSets[this.currentExercise] = [...this.currentSets];
+          }
+
+          // Check if this exercise has saved data from current session
+          if (this.currentExercise === exerciseId && this.currentSets) {
+            console.log('📈 Resuming same exercise with existing sets');
+            // Keep the existing currentSets for this exercise
+            // Don't clear the sets
+          } else {
+            console.log('🆕 Starting different exercise or loading saved data');
+            // Starting a different exercise or loading saved data
+            this.currentExercise = exerciseId;
+            this.currentSets = [];
+
+            // First try to load saved sets from current workout session
+            if (this.currentWorkout.exerciseSets[exerciseId]) {
+              console.log('📂 Loading saved sets from current workout session');
+              this.currentSets = [...this.currentWorkout.exerciseSets[exerciseId]];
+            } else if (isCompleted) {
+              console.log('📋 Loading existing records for completed exercise');
+              // Find records from saved records for TODAY'S workout
+              const records = await this.dataStore.getWorkoutRecords(
+                this.currentWorkout.date,
+                this.currentWorkout.id
+              );
+              const exerciseRecords = records.filter(r => r.exerciseId === exerciseId);
+
+              console.log('📋 Found records for exercise:', exerciseRecords.length);
+
+              // Convert records to sets format
+              exerciseRecords.forEach(record => {
+                this.currentSets.push({
+                  weight: record.weight,
+                  reps: record.reps,
+                  setNumber: record.set
+                });
+              });
+            }
+
+            // Only add blank set if no saved data exists
+            if (this.currentSets.length === 0) {
+              console.log('➕ Adding blank set for new exercise');
+              this.addBlankSet();
+            }
+          }
+
+          // Remove from completed exercises if re-entering
+          const completedIndex = this.currentWorkout.completedExercises.indexOf(exerciseId);
+          if (completedIndex > -1) {
+            console.log('🔄 Removing from completed exercises for re-entry');
+            this.currentWorkout.completedExercises.splice(completedIndex, 1);
+          }
+
+          // Save session state
+          this.saveWorkoutSession();
+
+          this.showView("exerciseView");
+          await this.loadExerciseEntry();
+
+          // Update the rendered sets in the DOM
+          document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
+        }
+
+        async loadExerciseEntry() {
+          const exerciseId = this.currentExercise;
+          const exercise = this.dataStore.exerciseMap.get(exerciseId);
+          console.log('📝 loadExerciseEntry for:', { exerciseId, exerciseName: exercise.name });
+          document.getElementById("exerciseTitle").textContent = exercise.name;
+
+          const pr = await this.dataStore.calculatePR(exerciseId);
+          const lastWorkout = await this.dataStore.getLastWorkout(
+            exerciseId,
+            this.currentWorkout.date
+          );
+
+          let html = "";
+
+          // PR Section
+          if (pr) {
+            html += `
+                        <div class="info-section">
+                            <div class="info-row">
+                                <span class="info-label">Personal Record</span>
+                                <span class="info-value pr-value">${
+                                  pr.weight
+                                } lbs × ${pr.reps}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">PR Date</span>
+                                <span class="info-value">${this.formatDate(
+                                  pr.date
+                                )}</span>
+                            </div>
+                        </div>
+                    `;
+          }
+
+          // Previous Workout
+          if (lastWorkout && lastWorkout.length > 0) {
+            html += `
+                        <div class="section-title">Last Time (${this.formatDate(
+                          lastWorkout[0].date
+                        )})</div>
+                        <div class="previous-sets">
+                            ${lastWorkout
+                              .map(
+                                (set) => `
+                                <div class="previous-set">
+                                    <span class="previous-set-number">Set ${set.set}</span>
+                                    <span class="previous-set-data">${set.weight} lbs × ${set.reps}</span>
+                                </div>
+                            `
+                              )
+                              .join("")}
+                        </div>
+                    `;
+          }
+
+          // Today's Sets
+          html += `
+                    <div class="section-title">Today</div>
+                    <div id="todaysSets" class="sets-container">
+                        ${this.renderCurrentSets()}
+                    </div>
+                    <button class="button-secondary" onclick="app.submitCurrentSet()">Submit</button>
+                `;
+
+          document.getElementById("exerciseContent").innerHTML = html;
+        }
+
+        renderCurrentSets() {
+          if (this.currentSets.length === 0) return "";
+
+          return this.currentSets
+            .map((set, index) => {
+              const hasData = set.weight && set.reps;
+              const rowClass = hasData ? "set-row has-data" : "set-row empty";
+              
+              return `
+                <div class="${rowClass}">
+                  <span class="set-number">Set ${index + 1}</span>
+                  <div class="set-inputs">
+                    <div class="input-group">
+                      <input type="number" 
+                             inputmode="numeric" 
+                             pattern="[0-9]*"
+                             autocomplete="off"
+                             min="0"
+                             enterkeyhint="done"
+                             value="${set.weight || ""}" 
+                             placeholder="${set.placeholderWeight || ""}"
+                             oninput="app.updateSetData(${index}, 'weight', this.value)" />
+                      <span class="input-label">lbs</span>
+                    </div>
+                    <div class="input-group">
+                      <input type="number" 
+                             inputmode="numeric" 
+                             pattern="[0-9]*"
+                             autocomplete="off"
+                             min="0"
+                             enterkeyhint="done"
+                             value="${set.reps || ""}" 
+                             placeholder="${set.placeholderReps || ""}"
+                             oninput="app.updateSetData(${index}, 'reps', this.value)" />
+                      <span class="input-label">reps</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+        }
+
+        async submitCurrentSet() {
+          // Find the last set that has data
+          const lastSetIndex = this.currentSets.length - 1;
+          if (lastSetIndex < 0) {
+            alert("No set to submit");
+            return;
+          }
+
+          const currentSet = this.currentSets[lastSetIndex];
+
+          if (!currentSet.weight || !currentSet.reps) {
+            alert("Please enter both weight and reps for this set.");
+            return;
+          }
+
+          // Create record
+          const setNumber = lastSetIndex + 1;
+          const record = {
+            date: this.currentWorkout.date,
+            workoutId: this.currentWorkout.id,
+            exerciseId: this.currentExercise,
+            set: setNumber,
+            weight: currentSet.weight,
+            reps: currentSet.reps,
+            timestamp: new Date().toISOString(),
+          };
+
+          // Save record
+          await this.dataStore.addRecords([record]);
+
+          this.showSyncStatus("Set saved", 1500);
+
+          // Add a new blank set
+          await this.addBlankSet();
+
+          // Re-render the sets container
+          document.getElementById("todaysSets").innerHTML = this.renderCurrentSets();
+        }
+
+        async addSet() {
+          const lastWorkout = await this.dataStore.getLastWorkout(
+            this.currentExercise,
+            this.currentWorkout.date
+          );
+          const setNumber = this.currentSets.length + 1;
+
+          let placeholderWeight = "";
+          let placeholderReps = "";
+
+          if (lastWorkout && lastWorkout[setNumber - 1]) {
+            placeholderWeight = lastWorkout[setNumber - 1].weight;
+            placeholderReps = lastWorkout[setNumber - 1].reps;
+          } else if (this.currentSets.length > 0) {
+            // Use previous set's values as placeholder
+            const prevSet = this.currentSets[this.currentSets.length - 1];
+            placeholderWeight = prevSet.weight || prevSet.placeholderWeight;
+            placeholderReps = prevSet.reps || prevSet.placeholderReps;
+          }
+
+          this.currentSets.push({
+            placeholderWeight,
+            placeholderReps,
+            weight: "",
+            reps: "",
+          });
+
+          document.getElementById("todaysSets").innerHTML =
+            this.renderCurrentSets();
+
+          // Focus on the new weight input
+          setTimeout(() => {
+            document
+              .getElementById(`weight_${this.currentSets.length - 1}`)
+              .focus();
+          }, 50);
+        }
+
+        updateSetInput(index, field, value) {
+          this.currentSets[index][field] = value ? parseInt(value) : "";
+          
+          // Update visual state immediately
+          this.updateSetRowStyling(index);
+          
+          // Debounced saving to avoid excessive localStorage writes
+          if (this.saveStateTimeout) {
+            clearTimeout(this.saveStateTimeout);
+          }
+          
+          this.saveStateTimeout = setTimeout(() => {
+            // Placeholder for debounced save - can be removed if not needed
+          }, 100);
+        }
+
+        updateSetData(index, field, value) {
+          this.currentSets[index][field] = value ? parseInt(value) : "";
+
+          // Update visual state
+          this.updateSetRowStyling(index);
+
+          // Save session state (debounced)
+          this.scheduleSessionSave();
+        }
+
+        updateSetRowStyling(index) {
+          const setRow = document.querySelector(`#todaysSets .set-row:nth-child(${index + 1})`);
+          if (setRow) {
+            const set = this.currentSets[index];
+            const hasData = set.weight && set.reps;
+            
+            setRow.className = hasData ? "set-row has-data" : "set-row empty";
+          }
+        }
+
+
+
+
+        async addBlankSet() {
+          const lastWorkout = await this.dataStore.getLastWorkout(
+            this.currentExercise,
+            this.currentWorkout.date
+          );
+          const setNumber = this.currentSets.length + 1;
+
+          let placeholderWeight = "";
+          let placeholderReps = "";
+
+          if (lastWorkout && lastWorkout[setNumber - 1]) {
+            placeholderWeight = lastWorkout[setNumber - 1].weight;
+            placeholderReps = lastWorkout[setNumber - 1].reps;
+          } else if (this.currentSets.length > 0) {
+            // Use previous set's values as placeholder
+            const prevSet = this.currentSets[this.currentSets.length - 1];
+            placeholderWeight = prevSet.weight;
+            placeholderReps = prevSet.reps;
+          }
+
+          this.currentSets.push({
+            placeholderWeight,
+            placeholderReps,
+            weight: "",
+            reps: ""
+          });
+        }
+
+        async saveExercise() {
+          // Check if any sets have been logged for this exercise
+          const workoutRecords = await this.dataStore.getWorkoutRecords(
+            this.currentWorkout.date,
+            this.currentWorkout.id
+          );
+          const exerciseRecords = workoutRecords.filter(r => r.exerciseId === this.currentExercise);
+
+          if (exerciseRecords.length === 0) {
+            alert("Please submit at least one set before marking as complete");
+            return;
+          }
+
+          // Save current sets to exerciseSets
+          this.currentWorkout.exerciseSets[this.currentExercise] = [...this.currentSets];
+
+          // Mark exercise as completed
+          if (
+            !this.currentWorkout.completedExercises.includes(
+              this.currentExercise
+            )
+          ) {
+            this.currentWorkout.completedExercises.push(this.currentExercise);
+          }
+
+
+          await this.backToWorkout();
+        }
+
+        async backToWorkout() {
+          console.log('🔙 backToWorkout called');
+
+          // Save current sets before leaving if exercise isn't completed
+          if (this.currentExercise && this.currentSets && !this.currentWorkout.completedExercises.includes(this.currentExercise)) {
+            console.log('💾 Saving incomplete exercise sets before leaving');
+            this.currentWorkout.exerciseSets[this.currentExercise] = [...this.currentSets];
+          }
+
+          this.showView("workoutView");
+          await this.loadWorkoutExercises();
+        }
+
+        async cancelWorkout() {
+          // Check if the current workout has any saved records
+          const todaysDate = this.getTodaysDate();
+          const workoutRecords = await this.dataStore.getWorkoutRecords(
+            todaysDate,
+            this.currentWorkout.id
+          );
+          const hasRecords = workoutRecords.length > 0;
+
+          if (hasRecords) {
+            // Workout has saved records - different message
+            if (!confirm(
+              "This workout has saved sets that will remain in your records. Cancel anyway?"
+            )) {
+              return;
+            }
+          } else if (this.currentWorkout.completedExercises.length > 0) {
+            // Workout has unsaved progress
+            if (!confirm(
+              "Are you sure you want to cancel this workout? You will lose all unsaved progress."
+            )) {
+              return;
+            }
+          }
+
+          this.currentWorkout = null;
+          this.showView("homeView");
+        }
+
+        async finishWorkout() {
+          if (this.currentWorkout.completedExercises.length === 0) {
+            alert("Complete at least one exercise before finishing");
+            return;
+          }
+
+          // Data is already saved to IndexedDB - no need to sync
+          this.showSyncStatus("Workout saved!", 2000);
+
+          // Clear session data - workout is complete
+          this.clearWorkoutSession();
+
+          this.currentWorkout = null;
+          this.currentExercise = null;
+          this.currentSets = [];
+          this.showView("homeView");
+
+          // Refresh current workouts on home view
+          await this.loadCurrentWorkouts();
+        }
+
+        // List Management
+        loadWorkoutsList() {
+          const container = document.getElementById("workoutsList");
+          const workouts = Array.from(this.dataStore.workoutMap.values())
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+          if (workouts.length === 0) {
+            container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-title">No Workouts</div>
+                            <p>Create your first workout template</p>
+                        </div>
+                    `;
+            return;
+          }
+
+          container.innerHTML = `
+                    <div class="list-container">
+                        ${workouts
+                          .map(
+                            (workout) => `
+                            <div class="list-item" onclick="app.showEditWorkoutView('${workout.id}')">
+                                <div>
+                                    <div class="list-item-title">${workout.name}</div>
+                                    <div class="list-item-subtitle">${workout.exercises.length} exercises</div>
+                                </div>
+                                <div class="list-item-arrow">›</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
+        }
+
+        async loadExercisesList() {
+          const searchInput = document.getElementById("exerciseSearch");
+          if (searchInput) searchInput.value = "";
+
+          const container = document.getElementById("exercisesList");
+          const allExercises = Array.from(this.dataStore.exerciseMap.values());
+          const activeExercises = this.sortExercises(allExercises.filter(ex => !ex.isDeleted));
+          const deletedExercises = await this.dataStore.getDeletedExercises();
+
+          container.innerHTML = `
+                    <div class="list-container" id="exercisesListContainer">
+                        ${activeExercises
+                          .map(
+                            (exercise) => `
+                            <div class="list-item" onclick="app.showEditExerciseModal('${exercise.id}')">
+                                <div class="list-item-title">${exercise.name}</div>
+                                <div class="list-item-arrow">›</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                    ${deletedExercises.length > 0 ? `
+                        <button class="button-secondary" onclick="app.showDeletedExercisesModal()" style="margin-top: 16px;">
+                            Show Deleted Exercises (${deletedExercises.length})
+                        </button>
+                    ` : ''}
+                `;
+        }
+
+        sortExercises(exercises) {
+          return exercises.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        renderSearchInput(targetId) {
+          return `<input type="text" placeholder="Search exercises..."
+            oninput="app.filterExerciseList(this.value, '${targetId}')"
+            style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; margin-bottom: 8px;">`;
+        }
+
+        filterExerciseList(query, containerId) {
+          const container = document.getElementById(containerId);
+          if (!container) return;
+          const q = query.toLowerCase().trim();
+          for (const item of container.children) {
+            const name = item.textContent.toLowerCase();
+            item.style.display = (!q || name.includes(q)) ? '' : 'none';
+          }
+        }
+
+        async loadHistory() {
+          const container = document.getElementById("historyContent");
+          const recentWorkouts = await this.dataStore.getRecentWorkouts();
+
+          if (recentWorkouts.length === 0) {
+            container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-title">No Workouts Yet</div>
+                            <p>Complete your first workout to see history</p>
+                        </div>
+                    `;
+            return;
+          }
+
+          container.innerHTML = recentWorkouts
+            .map(
+              (workout) => `
+                    <div class="section-title">${this.formatDate(
+                      workout.date
+                    )}</div>
+                    <div class="list-container">
+                        <div class="list-item" onclick="app.showWorkoutDetails('${workout.date}', '${workout.workoutId}')">
+                            <div>
+                                <div class="list-item-title">${this.dataStore.getWorkoutName(
+                                  workout.workoutId
+                                )}</div>
+                                <div class="list-item-subtitle">${
+                                  workout.exercises.size
+                                } exercises completed</div>
+                            </div>
+                            <div class="list-item-arrow">›</div>
+                        </div>
+                    </div>
+                `
+            )
+            .join("");
+        }
+
+        async showWorkoutDetails(date, workoutId) {
+          this.currentHistoricalWorkout = { date, workoutId };
+          const workoutRecords = await this.dataStore.getWorkoutRecords(date, workoutId);
+          const workoutName = this.dataStore.getWorkoutName(workoutId);
+          
+          // Update title
+          document.getElementById("workoutDetailsTitle").textContent = workoutName;
+          
+          // Clear header action
+          document.getElementById("workoutDetailsHeaderAction").innerHTML = "";
+          
+          // Group records by exercise
+          const exerciseGroups = {};
+          workoutRecords.forEach(record => {
+            if (!exerciseGroups[record.exerciseId]) {
+              exerciseGroups[record.exerciseId] = [];
+            }
+            exerciseGroups[record.exerciseId].push(record);
+          });
+          
+          const container = document.getElementById("workoutDetailsContent");
+          container.innerHTML = `
+            <div style="padding: 0 20px;">
+              <div class="section-title">${this.formatDate(date)}</div>
+              ${Object.keys(exerciseGroups).map(exerciseId => {
+                const exercise = this.dataStore.exerciseMap.get(exerciseId);
+                const exerciseRecords = exerciseGroups[exerciseId].sort((a, b) => a.set - b.set);
+                const isDeleted = exercise && exercise.isDeleted;
+                const exerciseName = exercise ? exercise.name : 'Unknown Exercise';
+                const displayName = isDeleted ? `${exerciseName} (Deleted)` : exerciseName;
+                const titleClass = isDeleted ? 'style="color: #8e8e93; font-style: italic;"' : '';
+                
+                return `
+                  <div class="list-container" style="margin-bottom: 16px;">
+                    <div class="section-title" ${titleClass}>${displayName}</div>
+                    ${exerciseRecords.map(record => `
+                      <div class="list-item" style="padding: 12px 16px; cursor: pointer;" 
+                           onclick="app.showEditRecordModal('${date}', '${workoutId}', '${exerciseId}', ${record.set}, ${record.weight}, ${record.reps})">
+                        <div>
+                          <div class="list-item-title">Set ${record.set}</div>
+                          <div class="list-item-subtitle">${record.weight} lbs × ${record.reps} reps</div>
+                        </div>
+                        <div class="list-item-arrow">›</div>
+                      </div>
+                    `).join('')}
+                  </div>
+                `;
+              }).join('')}
+              <button class="button-secondary" style="background: #ff3b30; color: white; margin-top: 32px; margin-bottom: 32px;" onclick="app.deleteWorkout('${date}', '${workoutId}')">
+                Delete This Workout
+              </button>
+            </div>
+          `;
+          
+          this.showView('workoutDetailsView');
+        }
+
+        async deleteWorkout(date, workoutId) {
+          const workoutName = this.dataStore.getWorkoutName(workoutId);
+          const formattedDate = this.formatDate(date);
+
+          if (!confirm(`Delete "${workoutName}" from ${formattedDate}? This cannot be undone.`)) {
+            return;
+          }
+
+          const deletedCount = await this.dataStore.deleteWorkoutRecords(date, workoutId);
+
+          this.showSyncStatus(`Workout deleted (${deletedCount} sets)`, 2000);
+
+          this.showView('historyView');
+          await this.loadHistory();
+        }
+
+        showEditRecordModal(date, workoutId, exerciseId, setNumber, currentWeight, currentReps) {
+          const exercise = this.dataStore.exerciseMap.get(exerciseId);
+          const exerciseName = exercise ? exercise.name : 'Unknown Exercise';
+          
+          // Store for later use
+          this.editingRecord = { date, workoutId, exerciseId, setNumber };
+          
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+            <div class="modal-header">
+              <h2 class="modal-title">Edit Set</h2>
+              <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+            </div>
+            <div style="padding: 12px 0;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 17px; font-weight: 600;">${exerciseName}</div>
+                <div style="color: #8e8e93; margin-top: 4px;">Set ${setNumber}</div>
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">Weight (lbs)</label>
+                <input type="number" 
+                       class="form-input" 
+                       id="editWeight" 
+                       inputmode="numeric"
+                       value="${currentWeight}"
+                       autocomplete="off">
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">Reps</label>
+                <input type="number" 
+                       class="form-input" 
+                       id="editReps" 
+                       inputmode="numeric"
+                       value="${currentReps}"
+                       autocomplete="off">
+              </div>
+              
+              <button class="button-primary" onclick="app.saveRecordEdit()">Save Changes</button>
+              <button class="button-secondary" 
+                      style="background: #ff3b30; color: white; margin-top: 8px;" 
+                      onclick="app.deleteRecordFromModal()">
+                Delete This Set
+              </button>
+            </div>
+          `;
+
+          modal.classList.add("show");
+          setTimeout(() => document.getElementById("editWeight").focus(), 100);
+        }
+
+        async saveRecordEdit() {
+          const newWeight = parseInt(document.getElementById("editWeight").value);
+          const newReps = parseInt(document.getElementById("editReps").value);
+
+          if (!newWeight || !newReps) {
+            alert("Please enter both weight and reps");
+            return;
+          }
+
+          const { date, workoutId, exerciseId, setNumber } = this.editingRecord;
+
+          // Update the record
+          await this.dataStore.updateRecord(date, workoutId, exerciseId, setNumber, newWeight, newReps);
+
+          this.closeModal();
+          this.showSyncStatus("Set updated", 2000);
+
+          // Refresh the workout details view
+          await this.showWorkoutDetails(this.currentHistoricalWorkout.date, this.currentHistoricalWorkout.workoutId);
+        }
+
+        async deleteRecordFromModal() {
+          if (!confirm("Delete this set? This cannot be undone.")) {
+            return;
+          }
+
+          const { date, workoutId, exerciseId, setNumber } = this.editingRecord;
+
+          // Delete the record
+          await this.dataStore.deleteRecord(date, workoutId, exerciseId, setNumber);
+
+          this.closeModal();
+          this.showSyncStatus("Set deleted", 2000);
+
+          // Refresh the workout details view
+          await this.showWorkoutDetails(this.currentHistoricalWorkout.date, this.currentHistoricalWorkout.workoutId);
+        }
+
+
+
+        // Modal Management
+        async showConfigModal() {
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+          const config = this.syncService.getConfig();
+          const lastSync = await this.syncService.getLastSyncTime();
+          const lastSyncText = this.syncService.formatLastSync(lastSync);
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Sync Configuration</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Close</button>
+                    </div>
+                    <form onsubmit="event.preventDefault(); app.saveConfig();">
+                        <div class="form-group">
+                            <label class="form-label" for="apiUrl">Server URL</label>
+                            <input type="url"
+                                   class="form-input"
+                                   id="apiUrl"
+                                   placeholder="http://192.168.1.100:3000"
+                                   value="${config.apiUrl}"
+                                   autocomplete="off">
+                        </div>
+                        <p style="font-size: 12px; color: #8e8e93; margin: 8px 0 16px 0;">
+                            No API key needed - Tailscale provides network security
+                        </p>
+                        <button type="submit" class="button-primary">Save Configuration</button>
+                    </form>
+                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e5ea;">
+                        <p style="font-size: 14px; color: #8e8e93; margin-bottom: 12px;">
+                            Last sync: ${lastSyncText}
+                        </p>
+                        <button class="button-secondary" style="margin: 0; width: 100%;" onclick="app.testConnection()">
+                            Test Connection
+                        </button>
+                    </div>
+                `;
+
+          modal.classList.add("show");
+        }
+
+        async testConnection() {
+          this.showSyncStatus("Testing connection...", 10000);
+          const connected = await this.syncService.checkConnection();
+          if (connected) {
+            this.showSyncStatus("Connection successful!", 2000);
+          } else {
+            this.showSyncStatus("Connection failed - check URL", 3000);
+          }
+        }
+
+        async saveConfig() {
+          const apiUrl = document.getElementById("apiUrl").value.trim();
+
+          this.syncService.setConfig(apiUrl);
+
+          await this.updateConfigStatus();
+          this.closeModal();
+
+          if (this.syncService.isConfigured()) {
+            this.sync();
+          }
+        }
+
+        showAddExerciseModal() {
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Add Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Exercise Name</label>
+                        <input type="text" class="form-input" id="exerciseName" 
+                               placeholder="e.g., Bench Press" autocomplete="off">
+                    </div>
+                    <button class="button-primary" onclick="app.addExercise()">Add Exercise</button>
+                `;
+
+          modal.classList.add("show");
+          setTimeout(
+            () => document.getElementById("exerciseName").focus(),
+            100
+          );
+        }
+
+        showEditExerciseModal(exerciseId) {
+          this.editingExerciseId = exerciseId;
+          const exercise = this.dataStore.exerciseMap.get(exerciseId);
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Edit Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Exercise Name</label>
+                        <input type="text" class="form-input" id="exerciseName" 
+                               value="${exercise.name}" autocomplete="off">
+                    </div>
+                    <button class="button-primary" onclick="app.saveExerciseEdit()">Save Changes</button>
+                    <button class="button-secondary" style="color: #ff3b30; margin-top: 8px;" onclick="app.deleteExerciseFromModal()">Delete Exercise</button>
+                `;
+
+          modal.classList.add("show");
+          setTimeout(
+            () => document.getElementById("exerciseName").focus(),
+            100
+          );
+        }
+
+        async addExercise() {
+          const name = document.getElementById("exerciseName").value.trim();
+          if (!name) {
+            alert("Please enter an exercise name");
+            return;
+          }
+
+          await this.dataStore.addExercise(name);
+          this.closeModal();
+          await this.loadExercisesList();
+          this.showSyncStatus("Exercise added", 2000);
+        }
+
+        async saveExerciseEdit() {
+          const name = document.getElementById("exerciseName").value.trim();
+          if (!name) {
+            alert("Please enter an exercise name");
+            return;
+          }
+
+          await this.dataStore.updateExercise(this.editingExerciseId, name);
+          this.closeModal();
+          await this.loadExercisesList();
+          this.showSyncStatus("Exercise updated", 2000);
+        }
+
+        async deleteExercise(exerciseId) {
+          if (confirm("Delete this exercise? It will be hidden but data preserved.")) {
+            await this.dataStore.softDeleteExercise(exerciseId);
+            await this.loadExercisesList();
+          }
+        }
+
+        deleteExerciseFromModal() {
+          this.closeModal();
+          // Use setTimeout to ensure modal is closed before showing confirm dialog
+          setTimeout(async () => {
+            if (confirm("Delete this exercise? It will be hidden but data preserved.")) {
+              await this.dataStore.softDeleteExercise(this.editingExerciseId);
+              await this.loadExercisesList();
+            }
+          }, 100);
+        }
+
+        async showDeletedExercisesModal() {
+          const deletedExercises = await this.dataStore.getDeletedExercises();
+          const modal = document.getElementById("modal");
+          const content = document.getElementById("modalContent");
+
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Deleted Exercises</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Close</button>
+                    </div>
+                    <div class="list-container" style="margin: 0">
+                        ${deletedExercises
+                          .map(
+                            (exercise) => `
+                            <div class="list-item">
+                                <div class="list-item-title">${exercise.name}</div>
+                                <button class="restore-btn" onclick="app.restoreExercise('${exercise.id}')">Restore</button>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                    </div>
+                `;
+
+          modal.classList.add("show");
+        }
+
+        async restoreExercise(exerciseId) {
+          await this.dataStore.restoreExercise(exerciseId);
+          await this.loadExercisesList();
+          this.showSyncStatus("Exercise restored", 2000);
+
+          // Refresh modal content, or close if no more deleted exercises
+          const deletedExercises = await this.dataStore.getDeletedExercises();
+          if (deletedExercises.length === 0) {
+            this.closeModal();
+          } else {
+            await this.showDeletedExercisesModal();
+          }
+        }
+
+        showCreateWorkoutView() {
+          this.editingWorkoutId = null;
+          this.tempWorkoutExercises = [];
+          this.showView('createWorkoutView');
+          document.getElementById('newWorkoutName').value = '';
+          document.getElementById('createWorkoutTitle').textContent = 'New Workout';
+          document.getElementById('deleteWorkoutSection').style.display = 'none';
+          this.renderWorkoutExerciseList();
+        }
+
+        showEditWorkoutView(workoutId) {
+          const workout = this.dataStore.workoutMap.get(workoutId);
+          if (!workout) return;
+          this.editingWorkoutId = workoutId;
+          this.tempWorkoutExercises = workout.exercises.map((ex, i) => ({
+            exerciseId: ex.exerciseId,
+            order: i + 1
+          }));
+          this.showView('createWorkoutView');
+          document.getElementById('newWorkoutName').value = workout.name;
+          document.getElementById('createWorkoutTitle').textContent = 'Edit Workout';
+          document.getElementById('deleteWorkoutSection').style.display = '';
+          this.renderWorkoutExerciseList();
+        }
+
+        renderWorkoutExerciseList() {
+          const container = document.getElementById('workoutExerciseList');
+          if (this.tempWorkoutExercises.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="padding: 20px 0;"><p style="color: #8e8e93;">No exercises added yet</p></div>';
+            return;
+          }
+          container.innerHTML = this.tempWorkoutExercises.map((ex, i) => {
+            const name = this.dataStore.getExerciseName(ex.exerciseId);
+            return `<div class="workout-exercise-row">
+              <div class="workout-exercise-name">${name}</div>
+              <div class="workout-exercise-actions">
+                <button onclick="app.moveWorkoutExercise(${i}, -1)" ${i === 0 ? 'disabled style="opacity:0.3"' : ''}>&#9650;</button>
+                <button onclick="app.moveWorkoutExercise(${i}, 1)" ${i === this.tempWorkoutExercises.length - 1 ? 'disabled style="opacity:0.3"' : ''}>&#9660;</button>
+                <button class="delete-btn" onclick="app.removeWorkoutExercise(${i})">&#10005;</button>
+              </div>
+            </div>`;
+          }).join('');
+        }
+
+        showExercisePickerModal() {
+          const selectedIds = this.tempWorkoutExercises.map(e => e.exerciseId);
+          const allExercises = Array.from(this.dataStore.exerciseMap.values());
+          const available = this.sortExercises(allExercises.filter(ex => !ex.isDeleted && !selectedIds.includes(ex.id)));
+
+          const modal = document.getElementById('modal');
+          const content = document.getElementById('modalContent');
+          content.innerHTML = `
+                    <div class="modal-header">
+                        <h2 class="modal-title">Add Exercise</h2>
+                        <button class="modal-close" onclick="app.closeModal()">Cancel</button>
+                    </div>
+                    ${this.renderSearchInput('exercisePickerList')}
+                    <div class="list-container" id="exercisePickerList" style="margin: 0">
+                        ${available.map(ex => `
+                            <div class="list-item" onclick="app.pickExerciseForWorkout('${ex.id}')">
+                                <div class="list-item-title">${ex.name}</div>
+                                <div class="list-item-arrow">&#8250;</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+          modal.classList.add('show');
+        }
+
+        pickExerciseForWorkout(exerciseId) {
+          this.tempWorkoutExercises.push({
+            exerciseId,
+            order: this.tempWorkoutExercises.length + 1
+          });
+          this.closeModal();
+          this.renderWorkoutExerciseList();
+        }
+
+        moveWorkoutExercise(index, direction) {
+          const newIndex = index + direction;
+          if (newIndex < 0 || newIndex >= this.tempWorkoutExercises.length) return;
+          const temp = this.tempWorkoutExercises[index];
+          this.tempWorkoutExercises[index] = this.tempWorkoutExercises[newIndex];
+          this.tempWorkoutExercises[newIndex] = temp;
+          this.tempWorkoutExercises.forEach((ex, i) => ex.order = i + 1);
+          this.renderWorkoutExerciseList();
+        }
+
+        removeWorkoutExercise(index) {
+          this.tempWorkoutExercises.splice(index, 1);
+          this.tempWorkoutExercises.forEach((ex, i) => ex.order = i + 1);
+          this.renderWorkoutExerciseList();
+        }
+
+        cancelCreateWorkout() {
+          this.showView('workoutsView');
+        }
+
+        async deleteWorkout() {
+          if (!this.editingWorkoutId) return;
+
+          if (this.currentWorkout && this.currentWorkout.id === this.editingWorkoutId) {
+            alert('Cannot delete a workout that is currently active');
+            return;
+          }
+
+          if (!confirm('Delete this workout? Historical records will show "Unknown Workout".')) return;
+
+          await this.dataStore.deleteWorkout(this.editingWorkoutId);
+          this.showView('workoutsView');
+          this.showSyncStatus('Workout deleted', 2000);
+        }
+
+        async saveNewWorkout() {
+          const name = document.getElementById('newWorkoutName').value.trim();
+          if (!name) {
+            alert('Please enter a workout name');
+            return;
+          }
+          if (this.tempWorkoutExercises.length === 0) {
+            alert('Please add at least one exercise');
+            return;
+          }
+
+          const existing = Array.from(this.dataStore.workoutMap.values());
+          if (existing.some(w => w.name.toLowerCase() === name.toLowerCase() && w.id !== this.editingWorkoutId)) {
+            alert('A workout with this name already exists');
+            return;
+          }
+
+          if (this.editingWorkoutId) {
+            await this.dataStore.updateWorkout(this.editingWorkoutId, name, this.tempWorkoutExercises);
+            this.showView('workoutsView');
+            this.showSyncStatus('Workout updated', 2000);
+          } else {
+            await this.dataStore.addWorkout(name, this.tempWorkoutExercises);
+            this.showView('workoutsView');
+            this.showSyncStatus('Workout created', 2000);
+          }
+        }
+
+        closeModal() {
+          document.getElementById("modal").classList.remove("show");
+        }
+
+        // Utility Methods
+        formatDate(dateString) {
+          // Parse date string as local time, not UTC
+          // dateString is in format "YYYY-MM-DD"
+          const [year, month, day] = dateString.split('-').map(num => parseInt(num, 10));
+          const date = new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+          
+          const months = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+          ];
+          return `${
+            months[date.getMonth()]
+          } ${date.getDate()}, ${date.getFullYear()}`;
+        }
+      }
+
+      // Initialize App
+      const app = new WeightTrackerApp();
+      app.initialize();
+
+      // Register Service Worker
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('ServiceWorker registered:', registration.scope);
+          })
+          .catch((error) => {
+            console.error('ServiceWorker registration failed:', error);
+          });
+      }
+    </script>
+  </body>
+</html>

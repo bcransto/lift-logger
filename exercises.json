@@ -1,0 +1,100 @@
+{
+  "exercises": [
+    {
+      "id": "ex_1",
+      "name": "90-degree Cable External Rotation"
+    },
+    {
+      "id": "ex_2",
+      "name": "Alternating Dumbbell Biceps Curl"
+    },
+    {
+      "id": "ex_3",
+      "name": "Bench Press"
+    },
+    {
+      "id": "ex_4",
+      "name": "Bent-over Lateral Raise"
+    },
+    {
+      "id": "ex_5",
+      "name": "Bulgarian Split Squats"
+    },
+    {
+      "id": "ex_6",
+      "name": "Deadlift Machine"
+    },
+    {
+      "id": "ex_7",
+      "name": "Dips"
+    },
+    {
+      "id": "ex_8",
+      "name": "Dumbbell Front Raise"
+    },
+    {
+      "id": "ex_9",
+      "name": "Dumbbell Shoulder Press"
+    },
+    {
+      "id": "ex_10",
+      "name": "Face Pull"
+    },
+    {
+      "id": "ex_11",
+      "name": "Front Squat"
+    },
+    {
+      "id": "ex_12",
+      "name": "Hip Raise"
+    },
+    {
+      "id": "ex_13",
+      "name": "Incline Dumbbell Bench Press"
+    },
+    {
+      "id": "ex_14",
+      "name": "Incline Press"
+    },
+    {
+      "id": "ex_15",
+      "name": "Lat Pull-down Narrow Bar"
+    },
+    {
+      "id": "ex_16",
+      "name": "Leg Curl"
+    },
+    {
+      "id": "ex_17",
+      "name": "Leg Extensions"
+    },
+    {
+      "id": "ex_18",
+      "name": "Leg Press"
+    },
+    {
+      "id": "ex_19",
+      "name": "One-arm Cable Lateral Raise"
+    },
+    {
+      "id": "ex_20",
+      "name": "Pull-ups"
+    },
+    {
+      "id": "ex_21",
+      "name": "Romanian Deadlift"
+    },
+    {
+      "id": "ex_22",
+      "name": "Seated Cable Row"
+    },
+    {
+      "id": "ex_23",
+      "name": "Shoulder Press"
+    },
+    {
+      "id": "ex_24",
+      "name": "Step-up"
+    }
+  ]
+}
