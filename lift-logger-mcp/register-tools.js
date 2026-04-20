@@ -9,20 +9,19 @@
 
 const { z } = require('zod');
 const {
-  listExercises, createExercise, suggestAltExercises
+  listExercises, createExercise, suggestAltExercises,
 } = require('./tools/exercises');
 const {
-  listWorkouts, getWorkout, createWorkout, updateWorkout, deleteWorkout
+  listWorkouts, getWorkout, createWorkout, updateWorkout, deleteWorkout,
 } = require('./tools/workouts');
 const {
-  getSessionHistory, getSession, getExerciseHistory, querySessionSets
+  getSessionHistory, getSession, getExerciseHistory, querySessionSets,
 } = require('./tools/sessions');
 const {
-  getPRs, getVolumeSummary
+  getPRs, getVolumeSummary,
 } = require('./tools/analysis');
 
-// Small wrapper: all tools return { content: [{type:'text', text: json}] }
-// and surface thrown errors with isError:true so the model can react.
+// Wrap a tool to return the MCP text-content shape and surface errors.
 function wrap(fn) {
   return async (args) => {
     try {
@@ -31,7 +30,7 @@ function wrap(fn) {
     } catch (err) {
       return {
         content: [{ type: 'text', text: `Error: ${err.message}` }],
-        isError: true
+        isError: true,
       };
     }
   };
@@ -42,38 +41,48 @@ function wrap(fn) {
 const blockExerciseSetSchema = z.object({
   id: z.string().optional(),
   set_number: z.number().int().positive().optional(),
+  target_weight: z.number().optional().nullable().describe('Absolute weight; mutually exclusive with target_pct_1rm'),
+  target_pct_1rm: z.number().min(0).max(1.2).optional().nullable().describe('Decimal 0.0-1.2 (e.g. 0.75)'),
   target_reps: z.number().int().nonnegative().optional().nullable(),
-  target_weight: z.number().optional().nullable(),
-  target_rpe: z.number().optional().nullable(),
-  notes: z.string().optional().nullable()
+  target_reps_each: z.boolean().optional().describe('true = "per side" for unilateral'),
+  target_duration_sec: z.number().int().nonnegative().optional().nullable().describe('For time-based sets (HIIT, planks)'),
+  target_rpe: z.number().int().min(1).max(10).optional().nullable(),
+  is_peak: z.boolean().optional().describe('UI ★ flag for pyramid peaks'),
+  rest_after_sec: z.number().int().nonnegative().optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 const blockExerciseSchema = z.object({
   id: z.string().optional(),
   exercise_id: z.string(),
-  position: z.number().int().nonnegative().optional(),
-  notes: z.string().optional().nullable(),
-  sets: z.array(blockExerciseSetSchema).optional()
+  position: z.number().int().positive().optional(),
+  alt_exercise_ids: z.array(z.string()).optional().describe('Suggested swaps for the Swap sheet'),
+  sets: z.array(blockExerciseSetSchema).optional(),
 });
 
 const workoutBlockSchema = z.object({
   id: z.string().optional(),
-  position: z.number().int().nonnegative().optional(),
-  block_type: z.enum(['standard', 'superset', 'circuit', 'dropset']).optional(),
-  rest_seconds: z.number().int().nonnegative().optional().nullable(),
-  notes: z.string().optional().nullable(),
-  exercises: z.array(blockExerciseSchema).optional()
+  position: z.number().int().positive().optional(),
+  kind: z.enum(['single', 'superset', 'circuit']).optional().describe('Block type'),
+  rounds: z.number().int().positive().optional().describe('Number of cycles; 1 for single'),
+  rest_after_sec: z.number().int().nonnegative().optional().nullable(),
+  setup_cue: z.string().optional().nullable().describe('Shown on Transition; **bold** words render in amber'),
+  exercises: z.array(blockExerciseSchema).optional(),
 });
 
 const workoutTreeCreateSchema = {
   name: z.string().min(1).describe('Workout name'),
   description: z.string().optional().nullable(),
-  blocks: z.array(workoutBlockSchema).optional().describe('Optional nested block tree')
+  tags: z.array(z.string()).optional().describe('Filterable tags (lower, upper, hiit, pyramid, ...)'),
+  starred: z.boolean().optional(),
+  est_duration: z.number().int().positive().optional().describe('Minutes'),
+  created_by: z.enum(['user', 'agent']).optional().describe("Defaults to 'agent' for MCP writes"),
+  blocks: z.array(workoutBlockSchema).optional().describe('Nested block tree'),
 };
 
 const workoutTreeUpdateSchema = {
   id: z.string().describe('Workout id to update'),
-  ...workoutTreeCreateSchema
+  ...workoutTreeCreateSchema,
 };
 
 // -------------------- registration --------------------
@@ -83,112 +92,119 @@ function registerTools(server) {
 
   server.tool(
     'list_exercises',
-    'List all exercises, optionally including soft-deleted or filtered by name substring.',
+    'List exercises, alphabetical. Optional filters: name substring, starred, muscleGroup tag, equipment tag.',
     {
-      includeDeleted: z.boolean().optional().describe('Include soft-deleted (default false)'),
-      search: z.string().optional().describe('Case-insensitive name substring filter')
+      search: z.string().optional().describe('Case-insensitive name substring'),
+      starred: z.boolean().optional(),
+      muscleGroup: z.string().optional().describe('Exact muscle-group tag (e.g. "quads")'),
+      equipment: z.string().optional().describe('Exact equipment tag (e.g. "db")'),
     },
-    wrap(listExercises)
+    wrap(listExercises),
   );
 
   server.tool(
     'create_exercise',
-    'Create a new exercise definition. Call list_exercises first to avoid duplicates.',
+    'Create a new exercise. equipment and muscleGroups are arrays of tags.',
     {
-      name: z.string().min(1).describe('Exercise name'),
-      category: z.string().optional().describe('e.g. compound, isolation, cardio'),
-      muscleGroup: z.string().optional().describe('Primary muscle group'),
-      equipment: z.string().optional().describe('e.g. barbell, dumbbell, bodyweight'),
-      notes: z.string().optional()
+      name: z.string().min(1),
+      equipment: z.array(z.string()).optional().describe('e.g. ["db"], ["smith_machine"]'),
+      muscleGroups: z.array(z.string()).optional().describe('e.g. ["quads", "glutes"]'),
+      movementType: z.enum(['squat', 'hinge', 'push', 'pull', 'carry', 'iso', 'plyo', 'cardio']).optional(),
+      isUnilateral: z.boolean().optional(),
+      starred: z.boolean().optional(),
+      notes: z.string().optional(),
     },
-    wrap(createExercise)
+    wrap(createExercise),
   );
 
   server.tool(
     'suggest_alt_exercises',
-    'Suggest alternative exercises that share muscle_group / category / equipment with the given exercise.',
+    'Rank other exercises by shared muscle_groups / movement_type / equipment. Useful for Swap Exercise.',
     {
-      exerciseId: z.string().describe('Exercise to find alternatives for'),
-      limit: z.number().int().positive().max(50).optional().describe('Max suggestions (default 10)')
+      exerciseId: z.string(),
+      limit: z.number().int().positive().max(50).optional(),
     },
-    wrap(suggestAltExercises)
+    wrap(suggestAltExercises),
   );
 
   // ---------- workouts ----------
 
   server.tool(
     'list_workouts',
-    'List all workout templates with block + exercise counts. Use get_workout for full details.',
+    'List all workout templates with block + exercise counts (no nested tree). Filters: tag, starred, createdBy.',
     {
-      includeDeleted: z.boolean().optional().describe('Include soft-deleted (default false)')
+      tag: z.string().optional(),
+      starred: z.boolean().optional(),
+      createdBy: z.enum(['user', 'agent']).optional(),
     },
-    wrap(listWorkouts)
+    wrap(listWorkouts),
   );
 
   server.tool(
     'get_workout',
     'Get a workout template with full nested block → exercise → set tree.',
-    { workoutId: z.string().describe('Workout id') },
-    wrap(getWorkout)
+    { workoutId: z.string() },
+    wrap(getWorkout),
   );
 
   server.tool(
     'create_workout',
-    'Create a new workout template with nested blocks / exercises / sets. Block ids, positions, and set_numbers are auto-assigned when omitted.',
+    'Create a workout template with nested blocks / exercises / sets. Ids, positions, set_numbers auto-assigned if omitted. created_by defaults to "agent".',
     workoutTreeCreateSchema,
-    wrap(createWorkout)
+    wrap(createWorkout),
   );
 
   server.tool(
     'update_workout',
-    'Update an existing workout template. Pass the full tree — id is required. Children without ids get new ones.',
+    'Upsert an existing workout tree. Merge-safe: omitted children are NOT deleted. Use delete_workout for full removal.',
     workoutTreeUpdateSchema,
-    wrap(updateWorkout)
+    wrap(updateWorkout),
   );
 
   server.tool(
     'delete_workout',
-    'Soft-delete a workout template and its entire block/exercise/set tree.',
-    { workoutId: z.string().describe('Workout id') },
-    wrap(deleteWorkout)
+    'Hard-delete a workout and its entire block/exercise/set tree. Sessions referencing it keep their snapshot.',
+    { workoutId: z.string() },
+    wrap(deleteWorkout),
   );
 
   // ---------- sessions ----------
 
   server.tool(
     'get_session_history',
-    'List past workout sessions (newest first) with aggregate stats. Dates are epoch millis.',
+    'List past sessions (newest first) with set count, volume, PR count. Epoch-millis dates.',
     {
       workoutId: z.string().optional(),
-      startDate: z.number().int().optional().describe('Epoch millis'),
-      endDate: z.number().int().optional().describe('Epoch millis'),
-      limit: z.number().int().positive().max(500).optional()
+      status: z.enum(['active', 'completed', 'abandoned']).optional(),
+      startDate: z.number().int().optional(),
+      endDate: z.number().int().optional(),
+      limit: z.number().int().positive().max(500).optional(),
     },
-    wrap(getSessionHistory)
+    wrap(getSessionHistory),
   );
 
   server.tool(
     'get_session',
-    'Get a single session with all sets grouped by exercise.',
+    'Single session with all session_sets grouped by exercise, plus the frozen workout_snapshot.',
     { sessionId: z.string() },
-    wrap(getSession)
+    wrap(getSession),
   );
 
   server.tool(
     'get_exercise_history',
-    'All sets recorded for a specific exercise over time. Dates are epoch millis.',
+    'All session_sets for an exercise over time (newest first).',
     {
       exerciseId: z.string(),
       startDate: z.number().int().optional(),
       endDate: z.number().int().optional(),
-      limit: z.number().int().positive().max(1000).optional()
+      limit: z.number().int().positive().max(1000).optional(),
     },
-    wrap(getExerciseHistory)
+    wrap(getExerciseHistory),
   );
 
   server.tool(
     'query_session_sets',
-    'Flexible filter on session sets. Dates are epoch millis.',
+    'Flexible filter on session_sets (operates on actual_*). Dates are epoch millis.',
     {
       exerciseId: z.string().optional(),
       sessionId: z.string().optional(),
@@ -199,33 +215,33 @@ function registerTools(server) {
       maxWeight: z.number().optional(),
       minReps: z.number().int().optional(),
       maxReps: z.number().int().optional(),
-      includeWarmup: z.boolean().optional(),
-      limit: z.number().int().positive().max(2000).optional()
+      prOnly: z.boolean().optional(),
+      limit: z.number().int().positive().max(2000).optional(),
     },
-    wrap(querySessionSets)
+    wrap(querySessionSets),
   );
 
   // ---------- analysis ----------
 
   server.tool(
     'get_prs',
-    'Read personal records from exercise_prs. Optionally filter by exerciseId or pr_type.',
+    'Read exercise_prs. Optionally filter by exerciseId or pr_type. MCP never writes these.',
     {
       exerciseId: z.string().optional(),
-      prType: z.enum(['weight', 'reps', 'volume', '1rm_est']).optional()
+      prType: z.enum(['weight', 'reps', 'volume', '1rm_est']).optional(),
     },
-    wrap(getPRs)
+    wrap(getPRs),
   );
 
   server.tool(
     'get_volume_summary',
-    'Aggregate training volume grouped by exercise, workout, week, or day. Dates are epoch millis.',
+    'Aggregate training volume grouped by exercise, workout, week, or day. Epoch-millis dates.',
     {
-      startDate: z.number().int().describe('Epoch millis'),
-      endDate: z.number().int().describe('Epoch millis'),
-      groupBy: z.enum(['exercise', 'workout', 'week', 'day'])
+      startDate: z.number().int(),
+      endDate: z.number().int(),
+      groupBy: z.enum(['exercise', 'workout', 'week', 'day']),
     },
-    wrap(getVolumeSummary)
+    wrap(getVolumeSummary),
   );
 }
 
