@@ -13,7 +13,9 @@ import type {
 } from '../types/schema'
 import { mockSyncCall } from './mockServer'
 
-const USE_MOCK_SYNC = (import.meta.env.VITE_USE_MOCK_SYNC ?? 'true') !== 'false'
+// Defaults to REAL /api/sync. Set VITE_USE_MOCK_SYNC=true to use the mock for
+// offline UI work without a backend.
+const USE_MOCK_SYNC = import.meta.env.VITE_USE_MOCK_SYNC === 'true'
 
 // Tables pushed by the client. `exercise_prs` is read-only on the client.
 const PUSH_TABLES: SyncTable[] = [
