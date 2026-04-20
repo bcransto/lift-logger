@@ -3,7 +3,7 @@ import { App } from './App'
 import { HomeScreen } from './features/workouts/HomeScreen'
 import { OverviewScreen } from './features/workouts/OverviewScreen'
 import { TransitionScreen } from './features/session/TransitionScreen'
-import { ActiveLiftScreen } from './features/session/ActiveLiftScreen'
+import { BlockView } from './features/session/BlockView'
 import { SummaryScreen } from './features/session/SummaryScreen'
 import { ExercisesTab, StatsTab, SettingsTab } from './features/stubs/StubScreen'
 
@@ -19,7 +19,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="transition/1" replace /> },
           { path: 'transition/:blockPosition', element: <TransitionScreen /> },
-          { path: 'active/:blockPosition/:setKey', element: <ActiveLiftScreen /> },
+          { path: 'active/:blockPosition/:setKey', element: <BlockView /> },
           { path: 'summary', element: <SummaryScreen /> },
         ],
       },
