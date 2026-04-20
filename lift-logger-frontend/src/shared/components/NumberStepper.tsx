@@ -45,14 +45,18 @@ export function NumberStepper({ label, value, step, onChange, min, unit, allowNu
             className={styles.input}
             value={draft}
             autoFocus
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => {
               setEditing(false)
-              const n = Number.parseFloat(draft)
-              if (!Number.isFinite(n)) {
-                if (allowNull && draft.trim() === '') onChange(null)
+              const trimmed = draft.trim()
+              if (trimmed === '') {
+                if (allowNull) onChange(null)
                 return
               }
+              const n = Number.parseFloat(trimmed)
+              if (!Number.isFinite(n)) return
+              if (min !== undefined && n < min) return
               onChange(n)
             }}
             onKeyDown={(e) => {

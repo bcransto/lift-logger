@@ -61,14 +61,23 @@ export function ActiveLiftScreen() {
   const [rpe, setRpe] = useState<number | null>(null)
   const [lastActual, setLastActual] = useState<{ w: number | null; r: number | null } | null>(null)
 
-  // Reset inputs when the target changes.
+  // Reset inputs when the cursor changes to a new set. `entry` itself is a
+  // fresh object reference every render — listing it here would re-run this
+  // effect on every render and clobber user input. Depend only on the cursor
+  // coordinates.
   useEffect(() => {
     if (!entry) return
     setWeight(entry.target.target_weight ?? null)
     setReps(entry.target.target_reps ?? null)
     setDurationSec(entry.target.target_duration_sec ?? null)
     setRpe(null)
-  }, [entry?.cursor.blockPosition, entry?.cursor.blockExercisePosition, entry?.cursor.roundNumber, entry?.cursor.setNumber, entry])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    entry?.cursor.blockPosition,
+    entry?.cursor.blockExercisePosition,
+    entry?.cursor.roundNumber,
+    entry?.cursor.setNumber,
+  ])
 
   // Look up "Last time" actual for this exercise.
   useEffect(() => {

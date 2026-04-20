@@ -36,13 +36,21 @@ export function HomeScreen() {
     return byWorkout
   }, [])
 
+  // Workout IDs that have at least one *completed* session. Abandoned and
+  // active-with-zero-sets sessions don't count — "New" means "never actually
+  // performed", not "never touched".
+  const sessionedWorkoutIds = useLiveQuery(async () => {
+    const rows = await db.sessions.where('status').equals('completed').toArray()
+    return new Set(rows.map((s) => s.workout_id).filter((id): id is string => !!id))
+  }, [])
+
   const chips = useMemo(() => {
     const tagSet = new Set<string>()
     for (const w of workouts ?? []) {
       for (const t of parseJsonArray(w.tags)) tagSet.add(t)
     }
     const extra = [...tagSet].slice(0, 8).map((t) => t[0]!.toUpperCase() + t.slice(1))
-    return ['All', '★ Starred', ...extra]
+    return ['All', 'New', '★ Starred', ...extra]
   }, [workouts])
 
   const filtered = useMemo(() => {
@@ -56,14 +64,16 @@ export function HomeScreen() {
     }
     const byChip = (w: WorkoutRow) => {
       if (chip === 'All') return true
+      if (chip === 'New') return !(sessionedWorkoutIds?.has(w.id) ?? false)
       if (chip === '★ Starred') return w.starred === 1
       const tags = parseJsonArray(w.tags) as string[]
       return tags.some((t) => t.toLowerCase() === chip.toLowerCase())
     }
     const filtered = rows.filter((w) => byQuery(w) && byChip(w))
-    filtered.sort(byCmp(sort))
+    // "New" overrides the sort dropdown — user expects newest-first.
+    filtered.sort(chip === 'New' ? (a, b) => b.created_at - a.created_at : byCmp(sort))
     return filtered
-  }, [workouts, query, chip, sort])
+  }, [workouts, sessionedWorkoutIds, query, chip, sort])
 
   return (
     <div className={styles.root}>
