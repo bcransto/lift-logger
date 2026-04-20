@@ -14,6 +14,7 @@ import { advance, cursorsEqual, firstCursor, iterateSets } from '../features/ses
 import { IDLE_TIMER, type TimerKind, type TimerSnapshot } from '../features/timer/TimerService'
 import type {
   Cursor,
+  PendingActuals,
   SavePreference,
   SessionRow,
   SessionSetRow,
@@ -65,10 +66,16 @@ export type SessionState = {
   loggedCount: number // convenience for progress bar
   hydrated: boolean
 
+  // Phase 2 state
+  pausedAt: number | null
+  skippedBlockIds: Set<string>
+  accumulatedPausedMs: number
+  pendingActuals: PendingActuals | null
+
   // actions
   hydrate: () => Promise<void>
   startSession: (workoutId: string) => Promise<SessionId | null>
-  logSet: (input: LoggedSetInput) => Promise<void>
+  logSet: (input?: Partial<LoggedSetInput>) => Promise<void>
   jumpTo: (cursor: Cursor) => void
   startTimer: (kind: Exclude<TimerKind, null>, durationSec: number) => void
   adjustTimer: (deltaSec: number) => void
@@ -108,21 +115,46 @@ export function applyEditToSnapshot(
   return { ...snapshot, blocks }
 }
 
+/**
+ * Find the first unlogged, unskipped cursor in the snapshot. Used on hydrate
+ * to restore execution position after a reload. Skipped blocks are ignored so
+ * we don't land the user inside a block they explicitly chose to bypass.
+ */
 function cursorFromLogged(
   snapshot: WorkoutSnapshot,
   logged: SessionSetRow[],
+  skippedBlockIds: ReadonlySet<string>,
 ): Cursor | null {
-  // Map logged rows to their matching cursor entries, find the first unlogged.
   const doneKeys = new Set(
     logged.map(
       (r) => `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`,
     ),
   )
   for (const entry of iterateSets(snapshot)) {
+    if (skippedBlockIds.has(entry.block.id)) continue
     const key = `${entry.cursor.blockPosition}.${entry.cursor.blockExercisePosition}.${entry.cursor.roundNumber}.${entry.cursor.setNumber}`
     if (!doneKeys.has(key)) return entry.cursor
   }
   return null
+}
+
+function parseSkippedBlocks(raw: string | null): Set<string> {
+  if (!raw) return new Set()
+  try {
+    const v = JSON.parse(raw)
+    return new Set(Array.isArray(v) ? (v as string[]) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function parsePendingActuals(raw: string | null): PendingActuals | null {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as PendingActuals
+  } catch {
+    return null
+  }
 }
 
 // ─── store ────────────────────────────────────────────────────────────
@@ -136,6 +168,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   pendingEdits: [],
   loggedCount: 0,
   hydrated: false,
+
+  // Phase 2 state — initialized empty; populated by hydrate + actions.
+  pausedAt: null,
+  skippedBlockIds: new Set<string>(),
+  accumulatedPausedMs: 0,
+  pendingActuals: null,
 
   async hydrate() {
     const actives = await db.sessions.where('status').equals('active').toArray()
@@ -152,15 +190,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return
     }
     const logged = await db.session_sets.where('session_id').equals(active.id).toArray()
+    const skippedBlockIds = parseSkippedBlocks(active.skipped_block_ids)
     set({
       sessionId: active.id,
       snapshot,
-      cursor: cursorFromLogged(snapshot, logged) ?? firstCursor(snapshot),
+      cursor: cursorFromLogged(snapshot, logged, skippedBlockIds) ?? firstCursor(snapshot),
       savePreference: active.save_preference,
       timer: IDLE_TIMER,
       pendingEdits: [],
       loggedCount: logged.length,
       hydrated: true,
+      pausedAt: active.paused_at,
+      skippedBlockIds,
+      accumulatedPausedMs: active.accumulated_paused_ms ?? 0,
+      pendingActuals: parsePendingActuals(active.pending_actuals),
     })
   },
 
@@ -204,18 +247,66 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       pendingEdits: [],
       loggedCount: 0,
       hydrated: true,
+      pausedAt: null,
+      skippedBlockIds: new Set<string>(),
+      accumulatedPausedMs: 0,
+      pendingActuals: null,
     })
     return id
   },
 
+  /**
+   * Log a set at the current cursor. Upsert-by-tuple: if a row already exists
+   * for this cursor (edited set, re-fired advance, sync echo), reuse its id
+   * and preserve created_at / logged_at / is_pr / was_swapped. Actuals merge
+   * in this priority: explicit input > pendingActuals stash > target defaults.
+   *
+   * After writing, the cursor advances through skipped blocks and pendingActuals
+   * + timer are cleared. A companion `sessions.pending_actuals = null` write
+   * keeps the DB in sync.
+   */
   async logSet(input) {
-    const { sessionId, snapshot, cursor } = get()
+    const { sessionId, snapshot, cursor, pendingActuals, skippedBlockIds } = get()
     if (!sessionId || !snapshot || !cursor) return
     const entry = [...iterateSets(snapshot)].find((e) => cursorsEqual(e.cursor, cursor))
     if (!entry) return
     const now = Date.now()
+
+    // Merge priority: explicit input > pendingActuals stash > targets.
+    const actualWeight =
+      input?.actualWeight ??
+      pendingActuals?.actual_weight ??
+      entry.target.target_weight ??
+      null
+    const actualReps =
+      input?.actualReps ?? pendingActuals?.actual_reps ?? entry.target.target_reps ?? null
+    const actualDurationSec =
+      input?.actualDurationSec ??
+      pendingActuals?.actual_duration_sec ??
+      entry.target.target_duration_sec ??
+      null
+    const rpe = input?.rpe ?? pendingActuals?.rpe ?? null
+    const restTakenSec = input?.restTakenSec ?? null
+    // Future: propagate notes when SessionSetRow gains a notes column; for now
+    // pendingActuals.notes is captured but unused in the row. Intentional.
+
+    // Upsert-by-tuple: find an existing row keyed on
+    // (session_id, block_position, block_exercise_position, round_number, set_number).
+    // The Dexie compound index (v2) makes this O(log n). Server-side UNIQUE
+    // constraint on the same tuple catches any drift.
+    const existing = await db.session_sets
+      .where('[session_id+block_position+block_exercise_position+round_number+set_number]')
+      .equals([
+        sessionId,
+        cursor.blockPosition,
+        cursor.blockExercisePosition,
+        cursor.roundNumber,
+        cursor.setNumber,
+      ])
+      .first()
+
     const row: SessionSetRow = {
-      id: uuid('ss') as SessionSetId,
+      id: (existing?.id ?? uuid('ss')) as SessionSetId,
       session_id: sessionId,
       exercise_id: entry.blockExercise.exercise_id as ExerciseId,
       block_position: cursor.blockPosition,
@@ -225,23 +316,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       target_weight: entry.target.target_weight ?? null,
       target_reps: entry.target.target_reps ?? null,
       target_duration_sec: entry.target.target_duration_sec ?? null,
-      actual_weight: input.actualWeight,
-      actual_reps: input.actualReps,
-      actual_duration_sec: input.actualDurationSec,
-      rpe: input.rpe,
-      rest_taken_sec: input.restTakenSec,
-      is_pr: 0, // server decides on sync
-      was_swapped: 0,
-      logged_at: now,
-      created_at: now,
+      actual_weight: actualWeight,
+      actual_reps: actualReps,
+      actual_duration_sec: actualDurationSec,
+      rpe,
+      rest_taken_sec: restTakenSec,
+      is_pr: existing?.is_pr ?? 0, // server re-decides on sync if actuals changed
+      was_swapped: existing?.was_swapped ?? 0,
+      logged_at: existing?.logged_at ?? now, // preserve original log time on edit
+      created_at: existing?.created_at ?? now,
       updated_at: now,
     }
     await db.session_sets.put(row)
-    const next = advance(snapshot, cursor)
-    // Bump session.updated_at so sync picks it up.
+
+    const next = advance(snapshot, cursor, skippedBlockIds)
     const ses = await db.sessions.get(sessionId)
-    if (ses) await db.sessions.put({ ...ses, updated_at: now })
-    set({ cursor: next, loggedCount: get().loggedCount + 1, timer: IDLE_TIMER })
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        pending_actuals: null, // consumed by this log
+        updated_at: now,
+      })
+    }
+    set({
+      cursor: next,
+      loggedCount: existing ? get().loggedCount : get().loggedCount + 1,
+      timer: IDLE_TIMER,
+      pendingActuals: null,
+    })
   },
 
   jumpTo(cursor) {
@@ -326,6 +428,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       timer: IDLE_TIMER,
       pendingEdits: [],
       loggedCount: 0,
+      pausedAt: null,
+      skippedBlockIds: new Set(),
+      accumulatedPausedMs: 0,
+      pendingActuals: null,
     })
   },
 }))

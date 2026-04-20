@@ -33,16 +33,37 @@ export function* iterateSets(snapshot: WorkoutSnapshot): Generator<CursorWithTar
   }
 }
 
-/** Find the cursor one step after the given cursor. Returns null when done. */
-export function advance(snapshot: WorkoutSnapshot, cursor: Cursor): Cursor | null {
-  const it = iterateSets(snapshot)
+/**
+ * Find the cursor one step after the given cursor, skipping any block whose
+ * id is in `skippedBlockIds`. If cursor itself is inside a skipped block
+ * (user returned then something auto-advanced past them), return the first
+ * entry beyond that block. Returns null when done.
+ */
+export function advance(
+  snapshot: WorkoutSnapshot,
+  cursor: Cursor,
+  skippedBlockIds: ReadonlySet<string> = EMPTY_SET,
+): Cursor | null {
   let seen = false
-  for (const entry of it) {
+  let cursorBlockSkipped = false
+  for (const entry of iterateSets(snapshot)) {
+    if (skippedBlockIds.has(entry.block.id)) {
+      // If the iterator is inside a skipped block while "seen" was set, keep stepping.
+      if (cursorsEqual(entry.cursor, cursor)) {
+        seen = true
+        cursorBlockSkipped = true
+      }
+      continue
+    }
     if (seen) return entry.cursor
     if (cursorsEqual(entry.cursor, cursor)) seen = true
   }
+  // If cursor was inside a skipped block and no later non-skipped entry exists.
+  if (cursorBlockSkipped) return null
   return null
 }
+
+const EMPTY_SET: ReadonlySet<string> = new Set()
 
 /** Resolve the target + context for a cursor. Returns null if cursor is stale. */
 export function targetAt(snapshot: WorkoutSnapshot, cursor: Cursor): CursorWithTarget | null {
@@ -86,17 +107,46 @@ export function totalSetCount(snapshot: WorkoutSnapshot): number {
   return n
 }
 
-/** True if `cursor` falls into the first set of a new block (used to trigger Transition). */
+/** True if `cursor` is the very first set of its block (used to trigger Transition). */
 export function isNewBlock(snapshot: WorkoutSnapshot, cursor: Cursor): boolean {
-  return cursor.blockExercisePosition === 1 && cursor.roundNumber === 1 && cursor.setNumber === firstSetOfBlock(snapshot, cursor.blockPosition)
+  const first = firstCursorOfBlock(snapshot, cursor.blockPosition)
+  return first !== null && cursorsEqual(first, cursor)
 }
 
-function firstSetOfBlock(snapshot: WorkoutSnapshot, blockPosition: number): number {
+/**
+ * Cursor of the first set in the first block-exercise of a block.
+ * Correctly handles blocks whose first exercise isn't at position 1 (e.g. after
+ * a template-level reorder) and sets that aren't numbered from 1.
+ */
+export function firstCursorOfBlock(
+  snapshot: WorkoutSnapshot,
+  blockPosition: number,
+): Cursor | null {
   const b = snapshot.blocks.find((x) => x.position === blockPosition)
-  if (!b) return 1
-  const be = b.exercises.find((x) => x.position === 1)
-  if (!be) return 1
-  return be.sets[0]?.set_number ?? 1
+  if (!b || b.exercises.length === 0) return null
+  const firstBePosition = Math.min(...b.exercises.map((e) => e.position))
+  const be = b.exercises.find((e) => e.position === firstBePosition)!
+  if (be.sets.length === 0) return null
+  const firstSetNumber = Math.min(...be.sets.map((s) => s.set_number))
+  return {
+    blockPosition: b.position,
+    blockExercisePosition: firstBePosition,
+    roundNumber: 1,
+    setNumber: firstSetNumber,
+  }
+}
+
+/** First unlogged cursor inside a block, skipping sets that are already in `loggedKeys`. */
+export function firstUnloggedCursorInBlock(
+  snapshot: WorkoutSnapshot,
+  blockPosition: number,
+  loggedKeys: ReadonlySet<string>,
+): Cursor | null {
+  for (const entry of iterateSets(snapshot)) {
+    if (entry.cursor.blockPosition !== blockPosition) continue
+    if (!loggedKeys.has(cursorKey(entry.cursor))) return entry.cursor
+  }
+  return null
 }
 
 /** Count of planned sets for a single block_exercise across all rounds. */
