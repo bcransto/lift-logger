@@ -10,7 +10,13 @@
 import { create } from 'zustand'
 import { db } from '../db/db'
 import { buildWorkoutSnapshot } from '../db/queries'
-import { advance, cursorsEqual, firstCursor, iterateSets } from '../features/session/sessionEngine'
+import {
+  advance,
+  cursorsEqual,
+  firstCursor,
+  firstUnloggedCursorInBlock,
+  iterateSets,
+} from '../features/session/sessionEngine'
 import { IDLE_TIMER, type TimerKind, type TimerSnapshot } from '../features/timer/TimerService'
 import type {
   Cursor,
@@ -85,6 +91,18 @@ export type SessionState = {
   completeSession: (notes?: string | null) => Promise<void>
   abandonSession: () => Promise<void>
   resetLocal: () => void
+
+  // Phase 2 actions
+  pause: () => Promise<void>
+  resume: () => Promise<void>
+  skipCurrentSet: () => Promise<{ undoCursor: Cursor } | null>
+  undoSkip: (cursor: Cursor) => void
+  skipBlock: (blockId: string) => Promise<void>
+  returnToBlock: (blockId: string) => Promise<void>
+  endWorkout: (notes?: string | null) => Promise<void>
+  setPendingActuals: (patch: PendingActuals | null) => Promise<void>
+  startWorkTimer: (durationSec: number) => Promise<void>
+  adjustWorkTimer: (deltaSec: number) => Promise<void>
 }
 
 // ─── helpers (pure, exported for tests) ───────────────────────────────
@@ -391,16 +409,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   async completeSession(notes) {
-    const { sessionId } = get()
+    const { sessionId, pausedAt, accumulatedPausedMs } = get()
     if (!sessionId) return
     const now = Date.now()
+    // Fold any open pause interval into the accumulator so duration_sec
+    // reflects active workout time, not calendar time.
+    const finalAccum = accumulatedPausedMs + (pausedAt != null ? now - pausedAt : 0)
     const ses = await db.sessions.get(sessionId)
     if (ses) {
+      const rawDurationSec = Math.round((now - ses.started_at) / 1000)
+      const activeDurationSec = Math.max(0, rawDurationSec - Math.round(finalAccum / 1000))
       await db.sessions.put({
         ...ses,
         status: 'completed',
         ended_at: now,
-        duration_sec: Math.round((now - ses.started_at) / 1000),
+        duration_sec: activeDurationSec,
+        accumulated_paused_ms: finalAccum,
+        paused_at: null,
         notes: notes ?? ses.notes ?? null,
         updated_at: now,
       })
@@ -432,6 +457,180 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       skippedBlockIds: new Set(),
       accumulatedPausedMs: 0,
       pendingActuals: null,
+    })
+  },
+
+  // ─── Phase 2 actions ──────────────────────────────────────────────────
+
+  async pause() {
+    const { sessionId, pausedAt } = get()
+    if (!sessionId || pausedAt != null) return
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    await db.sessions.put({ ...ses, paused_at: now, updated_at: now })
+    set({ pausedAt: now })
+  },
+
+  async resume() {
+    const { sessionId, pausedAt, accumulatedPausedMs } = get()
+    if (!sessionId || pausedAt == null) return
+    const now = Date.now()
+    const delta = now - pausedAt
+    const newAccum = accumulatedPausedMs + delta
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    // Carry pause forward for work timer: shift its startedAt so remaining is unchanged.
+    const shiftedWorkTimerStart =
+      ses.work_timer_started_at != null ? ses.work_timer_started_at + delta : null
+    await db.sessions.put({
+      ...ses,
+      paused_at: null,
+      accumulated_paused_ms: newAccum,
+      work_timer_started_at: shiftedWorkTimerStart,
+      updated_at: now,
+    })
+    set({ pausedAt: null, accumulatedPausedMs: newAccum })
+  },
+
+  async skipCurrentSet() {
+    const { sessionId, snapshot, cursor, skippedBlockIds } = get()
+    if (!sessionId || !snapshot || !cursor) return null
+    const undoCursor = cursor
+    const next = advance(snapshot, cursor, skippedBlockIds)
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        work_timer_started_at: null,
+        work_timer_duration_sec: null,
+        pending_actuals: null,
+        updated_at: now,
+      })
+    }
+    set({ cursor: next, pendingActuals: null, timer: IDLE_TIMER })
+    return { undoCursor }
+  },
+
+  undoSkip(cursor) {
+    set({ cursor })
+  },
+
+  async skipBlock(blockId) {
+    const { sessionId, snapshot, skippedBlockIds } = get()
+    if (!sessionId || !snapshot) return
+    const nextSkipped = new Set(skippedBlockIds)
+    nextSkipped.add(blockId)
+    // Find the next non-skipped block's first cursor.
+    const cur = get().cursor
+    const nextCursor = cur ? advance(snapshot, cur, nextSkipped) : null
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        skipped_block_ids: JSON.stringify([...nextSkipped]),
+        work_timer_started_at: null,
+        work_timer_duration_sec: null,
+        updated_at: now,
+      })
+    }
+    set({ skippedBlockIds: nextSkipped, cursor: nextCursor, timer: IDLE_TIMER })
+  },
+
+  async returnToBlock(blockId) {
+    const { sessionId, snapshot, skippedBlockIds } = get()
+    if (!sessionId || !snapshot) return
+    const nextSkipped = new Set(skippedBlockIds)
+    nextSkipped.delete(blockId)
+    // Land on the first unlogged set of this block (reviewer catch #5 from the plan).
+    const logged = await db.session_sets.where('session_id').equals(sessionId).toArray()
+    const loggedKeys = new Set(
+      logged.map((r) => `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`),
+    )
+    const blockPosition = snapshot.blocks.find((b) => b.id === blockId)?.position
+    const target = blockPosition != null
+      ? firstUnloggedCursorInBlock(snapshot, blockPosition, loggedKeys)
+      : null
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        skipped_block_ids: nextSkipped.size > 0 ? JSON.stringify([...nextSkipped]) : null,
+        updated_at: now,
+      })
+    }
+    set({ skippedBlockIds: nextSkipped, cursor: target ?? get().cursor, timer: IDLE_TIMER })
+  },
+
+  async endWorkout(notes) {
+    // Delegate to completeSession; duration_sec accounting subtracts paused time below.
+    const { sessionId, pausedAt, accumulatedPausedMs } = get()
+    if (!sessionId) return
+    // If the session is paused when the user hits End, fold the current pause interval
+    // into accumulatedPausedMs so it doesn't count toward duration_sec.
+    let finalAccum = accumulatedPausedMs
+    if (pausedAt != null) finalAccum += Date.now() - pausedAt
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      const rawDurationSec = Math.round((now - ses.started_at) / 1000)
+      const activeDurationSec = Math.max(0, rawDurationSec - Math.round(finalAccum / 1000))
+      await db.sessions.put({
+        ...ses,
+        status: 'completed',
+        ended_at: now,
+        duration_sec: activeDurationSec,
+        accumulated_paused_ms: finalAccum,
+        paused_at: null,
+        notes: notes ?? ses.notes ?? null,
+        updated_at: now,
+      })
+    }
+    get().resetLocal()
+  },
+
+  async setPendingActuals(patch) {
+    const { sessionId } = get()
+    if (!sessionId) return
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    await db.sessions.put({
+      ...ses,
+      pending_actuals: patch ? JSON.stringify(patch) : null,
+      updated_at: now,
+    })
+    set({ pendingActuals: patch })
+  },
+
+  async startWorkTimer(durationSec) {
+    const { sessionId } = get()
+    if (!sessionId) return
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    await db.sessions.put({
+      ...ses,
+      work_timer_started_at: now,
+      work_timer_duration_sec: durationSec,
+      updated_at: now,
+    })
+  },
+
+  async adjustWorkTimer(deltaSec) {
+    const { sessionId } = get()
+    if (!sessionId) return
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses || ses.work_timer_duration_sec == null) return
+    const nextDuration = Math.max(0, ses.work_timer_duration_sec + deltaSec)
+    await db.sessions.put({
+      ...ses,
+      work_timer_duration_sec: nextDuration,
+      updated_at: now,
     })
   },
 }))

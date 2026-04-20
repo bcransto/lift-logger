@@ -92,7 +92,6 @@ function labelForKind(k: TimerKind): string {
   switch (k) {
     case 'setup': return 'AUTO-STARTED'
     case 'rest': return 'REST'
-    case 'block_rest': return 'BLOCK REST'
     case 'work': return 'WORK'
     default: return ''
   }
