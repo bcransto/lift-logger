@@ -14,7 +14,7 @@
 // Only the focused set card is a tap-hotlink to Set view; all others are
 // non-interactive to prevent accidental mis-hits.
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
@@ -67,22 +67,46 @@ export function BlockView() {
   const undoSkip = useSessionStore((s) => s.undoSkip)
   const { overlay, openOverlay, closeOverlay, showUndo } = useUiStore()
 
-  // Sync cursor FROM URL on URL change.
-  useEffect(() => {
-    const bp = Number.parseInt(bpStr ?? '1', 10)
-    const parsed = parseSetKey(setKey ?? '')
-    if (!parsed) return
-    jumpTo({
-      blockPosition: bp,
-      blockExercisePosition: parsed.blockExercisePosition,
-      roundNumber: parsed.roundNumber,
-      setNumber: parsed.setNumber,
-    })
-  }, [bpStr, setKey, jumpTo])
+  // Cursor is the source of truth. URL is a derived projection.
+  //
+  // Race the previous code hit: on reload, hydrate() recomputes cursor from the
+  // stored session_sets (first unlogged). But React Router still has the URL
+  // from before reload, which could point at an earlier set. A URL→cursor
+  // effect would then overwrite the hydrated cursor with the stale URL value,
+  // stranding the user on a past block.
+  //
+  // Instead: one-time mount sync aligns URL to the store cursor (or, if cursor
+  // is null, seeds cursor from URL — for a fresh session launch from
+  // Transition). After that, only cursor → URL is ever updated.
 
-  // Sync cursor TO URL after logSet advances.
+  const mountSyncedRef = useRef(false)
   useEffect(() => {
-    if (!sessionId || !cursor) return
+    if (!sessionId) return
+    if (mountSyncedRef.current) return
+    mountSyncedRef.current = true
+    if (cursor) {
+      const expected = `/session/${sessionId}/active/${cursor.blockPosition}/${cursor.blockExercisePosition}.${cursor.roundNumber}.${cursor.setNumber}`
+      if (window.location.pathname !== expected) {
+        navigate(expected, { replace: true })
+      }
+    } else {
+      const bp = Number.parseInt(bpStr ?? '1', 10)
+      const parsed = parseSetKey(setKey ?? '')
+      if (parsed) {
+        jumpTo({
+          blockPosition: bp,
+          blockExercisePosition: parsed.blockExercisePosition,
+          roundNumber: parsed.roundNumber,
+          setNumber: parsed.setNumber,
+        })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  // Cursor → URL on every subsequent cursor change (logSet, skip, return…).
+  useEffect(() => {
+    if (!sessionId || !cursor || !mountSyncedRef.current) return
     const expected = `/session/${sessionId}/active/${cursor.blockPosition}/${cursor.blockExercisePosition}.${cursor.roundNumber}.${cursor.setNumber}`
     if (window.location.pathname !== expected) navigate(expected, { replace: true })
   }, [cursor, sessionId, navigate])
