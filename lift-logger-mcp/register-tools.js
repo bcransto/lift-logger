@@ -149,7 +149,23 @@ function registerTools(server) {
 
   server.tool(
     'create_workout',
-    'Create a workout template with nested blocks / exercises / sets. Ids, positions, set_numbers auto-assigned if omitted. created_by defaults to "agent".',
+    [
+      'Create a workout template with nested blocks/exercises/sets. See docs/workout-authoring-guide.md for full semantics.',
+      '',
+      'Block kinds: "single" (one exercise, pyramid or straight sets; rounds always 1), "superset" (2+ exercises cycled per round; rounds = N), "circuit" (same shape as superset, typically time-based / HIIT).',
+      '',
+      'Rest rules:',
+      '- block_exercise_sets.rest_after_sec = rest AFTER that specific set. 0/null = no rest.',
+      '- Set rest_after_sec on the FIRST N-1 sets of a block, leave 0/null on the last set (unless you want rest before the next block).',
+      '- workout_blocks.rest_after_sec = between-rounds rest (only applies for superset/circuit with rounds > 1).',
+      '',
+      'Common pitfalls:',
+      '- Forgetting is_peak: true on the top set of a pyramid.',
+      '- Setting target_weight AND target_pct_1rm on the same set (CHECK constraint rejects).',
+      '- Using kind: "standard" or "hiit" — those do not exist. HIIT = circuit with target_duration_sec.',
+      '',
+      'After create, call get_workout to verify shape.',
+    ].join('\n'),
     workoutTreeCreateSchema,
     wrap(createWorkout),
   );

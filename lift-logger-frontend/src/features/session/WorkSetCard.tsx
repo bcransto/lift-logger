@@ -8,18 +8,32 @@ type Props = {
   isDone: boolean
   actual?: SessionSetRow
   beName: string
+  /** Show the exercise name on the card (helpful when block has multiple BEs). */
+  showExName?: boolean
   round: number | null
   totalRounds: number | null
+  /** If provided, card is tappable (hotlink to Set view). Non-focused cards omit this. */
   onTap?: () => void
 }
 
-export function WorkSetCard({ target, isFocused, isDone, actual, round, totalRounds, onTap }: Props) {
+export function WorkSetCard({
+  target,
+  isFocused,
+  isDone,
+  actual,
+  beName,
+  showExName,
+  round,
+  totalRounds,
+  onTap,
+}: Props) {
   const isTimed = target.target_duration_sec != null
   const cls = [
     styles.card,
     isFocused ? styles.focused : '',
     isDone ? styles.done : '',
     target.is_peak && !isFocused ? styles.peak : '',
+    onTap ? styles.tappable : '',
   ].filter(Boolean).join(' ')
 
   const weightDisplay =
@@ -38,6 +52,7 @@ export function WorkSetCard({ target, isFocused, isDone, actual, round, totalRou
 
   const body = (
     <>
+      {showExName ? <div className={styles.exName}>{beName}</div> : null}
       <div className={styles.label}>
         SET {target.set_number}
         {round != null && totalRounds != null ? ` · R${round}/${totalRounds}` : ''}

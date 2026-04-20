@@ -156,3 +156,53 @@ export function setsPerBlockExercise(block: SnapshotBlock, blockExercisePosition
   const rounds = block.kind === 'single' ? 1 : block.rounds
   return be.sets.length * rounds
 }
+
+/**
+ * Walk all cursors in a single block in execution (round-major) order.
+ * Used by Set view's up/down navigation — scoped to the block so the user
+ * can page through superset / circuit sets as they'll actually be performed.
+ */
+export function iterateBlockCursors(
+  snapshot: WorkoutSnapshot,
+  blockPosition: number,
+): Cursor[] {
+  const b = snapshot.blocks.find((x) => x.position === blockPosition)
+  if (!b) return []
+  const rounds = b.kind === 'single' ? 1 : b.rounds
+  const bes = b.exercises.slice().sort((a, b) => a.position - b.position)
+  const out: Cursor[] = []
+  for (let r = 1; r <= rounds; r++) {
+    for (const be of bes) {
+      for (const s of be.sets) {
+        out.push({
+          blockPosition: b.position,
+          blockExercisePosition: be.position,
+          roundNumber: r,
+          setNumber: s.set_number,
+        })
+      }
+    }
+  }
+  return out
+}
+
+/** Previous cursor within the same block (round-major). Null at the block's first set. */
+export function prevCursorInBlock(snapshot: WorkoutSnapshot, cursor: Cursor): Cursor | null {
+  const all = iterateBlockCursors(snapshot, cursor.blockPosition)
+  const idx = all.findIndex((c) => cursorsEqual(c, cursor))
+  return idx > 0 ? all[idx - 1]! : null
+}
+
+/** Next cursor within the same block (round-major). Null at the block's last set. */
+export function nextCursorInBlock(snapshot: WorkoutSnapshot, cursor: Cursor): Cursor | null {
+  const all = iterateBlockCursors(snapshot, cursor.blockPosition)
+  const idx = all.findIndex((c) => cursorsEqual(c, cursor))
+  return idx >= 0 && idx < all.length - 1 ? all[idx + 1]! : null
+}
+
+/** True if `cursor` is the final set of its block (last round, last BE, last set). */
+export function isLastSetOfBlock(snapshot: WorkoutSnapshot, cursor: Cursor): boolean {
+  const all = iterateBlockCursors(snapshot, cursor.blockPosition)
+  const last = all[all.length - 1]
+  return last ? cursorsEqual(last, cursor) : false
+}

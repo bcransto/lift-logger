@@ -7,15 +7,17 @@
   flex-direction: column;
   gap: var(--space-1);
   min-height: 96px;
-  /* Normalize <button> defaults so this is a tappable card. */
+  /* When rendered as <button>, normalize these: */
   width: 100%;
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
-.card:active {
+.tappable {
+  cursor: pointer;
+}
+.tappable:active {
   transform: scale(0.99);
 }
 
@@ -31,6 +33,13 @@
 
 .peak {
   border-color: var(--accent-2);
+}
+
+.exName {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
 }
 
 .label {
@@ -57,14 +66,14 @@
 
 .weight {
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 24px;
   line-height: 1;
   color: var(--text);
 }
 
 .reps {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 

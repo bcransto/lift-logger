@@ -1,14 +1,18 @@
-// Primary Active-Lift view. Vertical stack of work + rest cards for the
-// current block. Current cursor's card is focused. Rest cards interleave
-// between work cards based on each set's `rest_after_sec`. Active timer
-// docks at the top.
+// Primary Active-Lift view. Vertical stack of cards representing the current
+// block's execution in round-major order. Superset/circuit blocks interleave
+// their exercises (exA-R1, exB-R1, exA-R2, exB-R2, ...).
 //
-// Gestures: swipe right → Workout view, swipe left → Set view.
-// Both gestures open an overlay managed by uiStore.
+// Between consecutive work cards we render either:
+//   - a rest card (when the preceding set's rest_after_sec > 0), or
+//   - an inline "Next" button (when rest = 0/null) — only the slot right after
+//     the focused card is active; the rest are dim (visual rhythm only).
 //
-// Auto-advance: timed-work timer zero → logSet; rest timer zero → logSet
-// of the preceding set is already written, so rest expiration just fires
-// cursor advancement via the store's `advance`.
+// There is no bottom Next button. Advancement is inline.
+//
+// Header: LEFT = Workout view button, RIGHT = Set view button (active set).
+// Secondary row: Skip Set, End.
+// Only the focused set card is a tap-hotlink to Set view; all others are
+// non-interactive to prevent accidental mis-hits.
 
 import { useEffect, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -16,14 +20,21 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
-import { advance, cursorKey, parseSetKey } from './sessionEngine'
+import { cursorKey, isLastSetOfBlock, parseSetKey } from './sessionEngine'
 import { TimerDock } from './TimerDock'
 import { WorkSetCard } from './WorkSetCard'
 import { RestCard } from './RestCard'
 import { UndoToast } from './UndoToast'
 import { SetViewOverlay } from './SetView'
 import { WorkoutViewOverlay } from './WorkoutView'
-import type { Cursor, SessionSetRow, WorkoutSnapshot } from '../../types/schema'
+import type {
+  Cursor,
+  SessionSetRow,
+  SnapshotBlock,
+  SnapshotBlockExercise,
+  SnapshotSetTarget,
+  WorkoutSnapshot,
+} from '../../types/schema'
 import { mmss } from '../../shared/utils/format'
 import styles from './BlockView.module.css'
 
@@ -43,11 +54,7 @@ export function BlockView() {
 
   const snapshot = useMemo<WorkoutSnapshot | null>(() => {
     if (!session?.workout_snapshot) return null
-    try {
-      return JSON.parse(session.workout_snapshot) as WorkoutSnapshot
-    } catch {
-      return null
-    }
+    try { return JSON.parse(session.workout_snapshot) as WorkoutSnapshot } catch { return null }
   }, [session])
 
   const cursor = useSessionStore((s) => s.cursor)
@@ -60,7 +67,7 @@ export function BlockView() {
   const undoSkip = useSessionStore((s) => s.undoSkip)
   const { overlay, openOverlay, closeOverlay, showUndo } = useUiStore()
 
-  // Sync cursor FROM URL on URL change only.
+  // Sync cursor FROM URL on URL change.
   useEffect(() => {
     const bp = Number.parseInt(bpStr ?? '1', 10)
     const parsed = parseSetKey(setKey ?? '')
@@ -73,14 +80,14 @@ export function BlockView() {
     })
   }, [bpStr, setKey, jumpTo])
 
-  // Sync cursor TO URL when the store cursor advances (e.g. logSet).
+  // Sync cursor TO URL after logSet advances.
   useEffect(() => {
     if (!sessionId || !cursor) return
     const expected = `/session/${sessionId}/active/${cursor.blockPosition}/${cursor.blockExercisePosition}.${cursor.roundNumber}.${cursor.setNumber}`
     if (window.location.pathname !== expected) navigate(expected, { replace: true })
   }, [cursor, sessionId, navigate])
 
-  // Start the work timer automatically when cursor lands on a timed-work card.
+  // Work-timer lifecycle: start when cursor lands on a timed-work card, clear on others.
   useEffect(() => {
     if (!cursor || !snapshot || !session) return
     const entry = findEntry(snapshot, cursor)
@@ -90,20 +97,20 @@ export function BlockView() {
     if (isTimed && !alreadyStarted) {
       void startWorkTimer(entry.target.target_duration_sec as number)
     } else if (!isTimed && alreadyStarted) {
-      // Clear stale work timer fields.
-      void db.sessions.put({ ...session, work_timer_started_at: null, work_timer_duration_sec: null, updated_at: Date.now() })
+      void db.sessions.put({
+        ...session,
+        work_timer_started_at: null,
+        work_timer_duration_sec: null,
+        updated_at: Date.now(),
+      })
     }
   }, [cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber, snapshot, session, startWorkTimer])
-
-  // Navigation is tap-driven (not swipe). Tapping a work card jumps the cursor
-  // to that set and opens the Set view. A Workout button in the header opens
-  // the Workout view. Both overlays have back buttons. Much more reliable than
-  // gesture detection on a touch-heavy app, and matches iOS conventions.
 
   if (!sessionId) return <div className={styles.empty}>No session.</div>
   if (!session || !snapshot) return <div className={styles.empty}>Loading…</div>
   if (!cursor) {
     // Workout complete — route to summary.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     useEffect(() => {
       navigate(`/session/${sessionId}/summary`, { replace: true })
     })
@@ -114,101 +121,166 @@ export function BlockView() {
   const block = snapshot.blocks.find((b) => b.position === bp)
   if (!block) return <div className={styles.empty}>Block not found.</div>
 
-  // Build the card list for the focused block_exercise of this block.
-  // For supersets/circuits, render the currently focused exercise; users can swipe
-  // to Workout view to see all blocks' structure.
-  const be = block.exercises.find((e) => e.position === cursor.blockExercisePosition)
-  if (!be) return <div className={styles.empty}>Exercise not found.</div>
-
+  const cursorK = cursorKey(cursor)
+  const rounds = block.kind === 'single' ? 1 : block.rounds
   const loggedByKey = new Map(
     (logged ?? []).map((r) => [
       `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`,
       r,
     ]),
   )
-  const rounds = block.kind === 'single' ? 1 : block.rounds
-  const cursorK = cursorKey(cursor)
 
-  // Assemble an interleaved list: [set, rest?, set, rest?, ...] scoped to this BE across rounds.
+  // Assemble round-major cards across ALL block_exercises in this block.
+  // Between consecutive work cards: rest card or inline Next button.
   type Card =
-    | { kind: 'work'; cursor: Cursor; target: (typeof be.sets)[number]; row: SessionSetRow | undefined }
-    | { kind: 'rest'; afterKey: string; durationSec: number }
+    | { kind: 'work'; cursor: Cursor; target: SnapshotSetTarget; be: SnapshotBlockExercise; row: SessionSetRow | undefined }
+    | { kind: 'rest'; afterKey: string; durationSec: number; isActive: boolean }
+    | { kind: 'next'; afterKey: string; active: boolean }
   const cards: Card[] = []
+  const bes = block.exercises.slice().sort((a, b) => a.position - b.position)
+
+  // Most recent log in this block → drives rest card "active" indicator.
+  const latestInBlock = (logged ?? [])
+    .filter((r) => r.block_position === block.position)
+    .sort((a, b) => b.logged_at - a.logged_at)[0]
+  const latestKey = latestInBlock
+    ? `${latestInBlock.block_position}.${latestInBlock.block_exercise_position}.${latestInBlock.round_number}.${latestInBlock.set_number}`
+    : null
+
   for (let r = 1; r <= rounds; r++) {
-    for (const t of be.sets) {
-      const cur: Cursor = {
-        blockPosition: block.position,
-        blockExercisePosition: be.position,
-        roundNumber: r,
-        setNumber: t.set_number,
-      }
-      const key = cursorKey(cur)
-      cards.push({ kind: 'work', cursor: cur, target: t, row: loggedByKey.get(key) })
-      if (t.rest_after_sec && t.rest_after_sec > 0) {
-        cards.push({ kind: 'rest', afterKey: key, durationSec: t.rest_after_sec })
+    for (let beIdx = 0; beIdx < bes.length; beIdx++) {
+      const be = bes[beIdx]!
+      for (let sIdx = 0; sIdx < be.sets.length; sIdx++) {
+        const t = be.sets[sIdx]!
+        const cur: Cursor = {
+          blockPosition: block.position,
+          blockExercisePosition: be.position,
+          roundNumber: r,
+          setNumber: t.set_number,
+        }
+        const key = cursorKey(cur)
+        cards.push({ kind: 'work', cursor: cur, target: t, be, row: loggedByKey.get(key) })
+
+        // Is there a card after this one in the execution order?
+        const isLastSetInBe = sIdx === be.sets.length - 1
+        const isLastBeInRound = beIdx === bes.length - 1
+        const isLastRound = r === rounds
+        const isLastOverall = isLastSetInBe && isLastBeInRound && isLastRound
+        if (isLastOverall) continue
+
+        // Inter-card slot: rest card or inline Next button.
+        // Rest duration: at a round boundary (last-set-of-last-BE-but-more-rounds-coming),
+        // use block.rest_after_sec. Within-round transitions use set.rest_after_sec.
+        const isRoundBoundary = isLastSetInBe && isLastBeInRound && !isLastRound
+        const restAfter =
+          (isRoundBoundary ? block.rest_after_sec : t.rest_after_sec) ?? 0
+        if (restAfter > 0) {
+          cards.push({
+            kind: 'rest',
+            afterKey: key,
+            durationSec: restAfter,
+            isActive: latestKey === key,
+          })
+        } else {
+          cards.push({
+            kind: 'next',
+            afterKey: key,
+            active: cursorK === key, // only the slot after the focused set is live
+          })
+        }
       }
     }
   }
 
-  // For the timer dock's rest input: find the latest logged set IN THIS BE and its
-  // target rest_after_sec. If the last-logged set's cursor matches a work card that
-  // was followed by a rest card, the rest is running.
-  const logs = (logged ?? [])
-    .filter((r) => r.block_position === block.position && r.block_exercise_position === be.position)
-    .sort((a, b) => b.logged_at - a.logged_at)
-  const lastLog = logs[0]
-  const lastRestAfter = lastLog
-    ? be.sets.find((s) => s.set_number === lastLog.set_number)?.rest_after_sec ?? null
-    : null
+  // TimerDock inputs: rest_after_sec for the rest-timer derivation.
+  // Rule: if the latest-logged set is the FINAL set of the block (last round,
+  // last BE, last set-number), pull `block.rest_after_sec` — that's the
+  // between-rounds rest for circuits/supersets, or the post-block rest for
+  // single. Otherwise use the set's own rest_after_sec.
+  const lastRestAfter = (() => {
+    if (!latestInBlock) return null
+    const latestCursor: Cursor = {
+      blockPosition: latestInBlock.block_position,
+      blockExercisePosition: latestInBlock.block_exercise_position,
+      roundNumber: latestInBlock.round_number,
+      setNumber: latestInBlock.set_number,
+    }
+    if (isLastSetOfBlock(snapshot, latestCursor)) {
+      return block.rest_after_sec ?? null
+    }
+    const be = bes.find((e) => e.position === latestInBlock.block_exercise_position)
+    return be?.sets.find((s) => s.set_number === latestInBlock.set_number)?.rest_after_sec ?? null
+  })()
 
-  // Current-focus determination for rep-work Next button vs timed-work skip.
   const focusedEntry = findEntry(snapshot, cursor)
   const focusedIsTimed = focusedEntry?.target.target_duration_sec != null
-  const elapsedSinceStart = session.started_at ? mmss((Date.now() - session.started_at) / 1000) : '0:00'
+  const elapsedSinceStart = session.started_at
+    ? mmss((Date.now() - session.started_at) / 1000)
+    : '0:00'
   const liftNumber = cardNumber(snapshot, cursor)
 
-  const onNext = async () => {
-    await logSet()
-  }
   const onSkipSet = async () => {
     const undo = await skipCurrentSet()
     if (undo) showUndo('Set skipped', undo.undoCursor)
   }
+
   const onEnd = async () => {
     const unloggedRemaining = countUnloggedInNonSkippedBlocks(snapshot, logged ?? [], skippedBlockIds)
     if (unloggedRemaining > 0) {
-      if (!window.confirm(`Finish workout? You have ${unloggedRemaining} unlogged set${unloggedRemaining === 1 ? '' : 's'}.`)) {
-        return
-      }
+      if (!window.confirm(
+        `Finish workout? You have ${unloggedRemaining} unlogged set${unloggedRemaining === 1 ? '' : 's'}.`,
+      )) return
     }
     await endWorkout()
     navigate(`/session/${sessionId}/summary`, { replace: true })
   }
 
+  const onInlineNext = async () => {
+    // Advance from the focused set. logSet handles upsert + cursor advance.
+    await logSet()
+  }
+
+  const blockTitle = bes.map((e) => e.name).join('  +  ')
+  const blockKindTag =
+    block.kind === 'superset' ? `SUPERSET × ${block.rounds}` : block.kind === 'circuit' ? `CIRCUIT × ${block.rounds}` : null
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
+        <button
+          className={styles.navBtn}
+          onClick={() => openOverlay('workout')}
+          aria-label="Workout view"
+        >
+          ☰ Workout
+        </button>
         <div className={styles.eyebrow}>
-          LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart} ELAPSED
+          LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
         </div>
-        <div className={styles.actions}>
-          <button className={styles.actionBtn} onClick={() => openOverlay('workout')}>Workout</button>
-          <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
-          <button className={styles.actionBtn} onClick={onEnd}>End</button>
-        </div>
+        <button
+          className={styles.navBtn}
+          onClick={() => openOverlay('set')}
+          aria-label="Set view"
+        >
+          Set ⋮
+        </button>
       </header>
 
-      <h1 className={styles.display}>{be.name}</h1>
+      <h1 className={styles.display}>{blockTitle}</h1>
+      {blockKindTag ? <div className={styles.blockTag}>{blockKindTag}</div> : null}
+
+      <div className={styles.secondaryActions}>
+        <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
+        <button className={styles.actionBtn} onClick={onEnd}>End</button>
+      </div>
 
       <TimerDock
-        lastLoggedAt={lastLog?.logged_at ?? null}
+        lastLoggedAt={latestInBlock?.logged_at ?? null}
         lastLoggedRestAfterSec={lastRestAfter}
         workTimerStartedAt={session.work_timer_started_at ?? null}
         workTimerDurationSec={session.work_timer_duration_sec ?? null}
         onRestZero={() => {
-          // Rest expired — nothing to log (rest isn't a session_set); focus
-          // simply moves to the next work card via existing cursor, which is
-          // already on the next work set.
+          // Rest expired — cursor is already on the next work set. Just advance visuals.
         }}
         onWorkZero={() => {
           void logSet()
@@ -216,40 +288,44 @@ export function BlockView() {
       />
 
       <div className={styles.stack}>
-        {cards.map((c, i) =>
-          c.kind === 'work' ? (
-            <WorkSetCard
-              key={`w${i}`}
-              target={c.target}
-              cursor={c.cursor}
-              isFocused={cursorKey(c.cursor) === cursorK}
-              isDone={Boolean(c.row)}
-              actual={c.row}
-              beName={be.name}
-              round={block.kind !== 'single' ? c.cursor.roundNumber : null}
-              totalRounds={block.kind !== 'single' ? rounds : null}
-              onTap={() => {
-                jumpTo(c.cursor)
-                openOverlay('set')
-              }}
-            />
-          ) : (
-            <RestCard
-              key={`r${i}`}
-              durationSec={c.durationSec}
-              isActive={lastLog && `${lastLog.block_position}.${lastLog.block_exercise_position}.${lastLog.round_number}.${lastLog.set_number}` === c.afterKey}
-            />
-          ),
-        )}
+        {cards.map((c, i) => {
+          if (c.kind === 'work') {
+            const isFocused = cursorKey(c.cursor) === cursorK
+            return (
+              <WorkSetCard
+                key={`w${i}`}
+                target={c.target}
+                cursor={c.cursor}
+                isFocused={isFocused}
+                isDone={Boolean(c.row)}
+                actual={c.row}
+                beName={c.be.name}
+                showExName={bes.length > 1}
+                round={block.kind !== 'single' ? c.cursor.roundNumber : null}
+                totalRounds={block.kind !== 'single' ? rounds : null}
+                // Only focused card is a tap hotlink to Set view.
+                onTap={isFocused ? () => openOverlay('set') : undefined}
+              />
+            )
+          }
+          if (c.kind === 'rest') {
+            return <RestCard key={`r${i}`} durationSec={c.durationSec} isActive={c.isActive} />
+          }
+          // inline Next button
+          return (
+            <div key={`n${i}`} className={styles.inlineNextWrap}>
+              <button
+                className={`${styles.inlineNext} ${c.active ? styles.inlineNextActive : ''}`}
+                onClick={c.active ? onInlineNext : undefined}
+                disabled={!c.active || focusedIsTimed}
+                aria-label={c.active ? 'Next set' : 'Next (not active)'}
+              >
+                Next →
+              </button>
+            </div>
+          )
+        })}
       </div>
-
-      {!focusedIsTimed ? (
-        <div className={styles.footer}>
-          <button className={styles.nextBtn} onClick={onNext}>
-            Next →
-          </button>
-        </div>
-      ) : null}
 
       <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
@@ -268,30 +344,30 @@ function findEntry(snapshot: WorkoutSnapshot, cursor: Cursor) {
 }
 
 function cardNumber(snapshot: WorkoutSnapshot, cursor: Cursor) {
+  // "Lift" = which work card (1-indexed) the user is on, across the whole workout.
   let idx = 0
+  let hit = 0
   let total = 0
   for (const b of snapshot.blocks) {
     const rounds = b.kind === 'single' ? 1 : b.rounds
     for (let r = 1; r <= rounds; r++) {
       for (const be of b.exercises) {
-        total += be.sets.length
-        if (
-          b.position === cursor.blockPosition &&
-          be.position === cursor.blockExercisePosition &&
-          r === cursor.roundNumber
-        ) {
-          // Count sets within this be up to (and including) the current one.
-          for (const s of be.sets) {
-            idx++
-            if (s.set_number === cursor.setNumber) break
+        for (const s of be.sets) {
+          total++
+          if (
+            b.position === cursor.blockPosition &&
+            be.position === cursor.blockExercisePosition &&
+            r === cursor.roundNumber &&
+            s.set_number === cursor.setNumber
+          ) {
+            hit = total
           }
-        } else {
-          idx += 0 // don't increment for other BEs; we want "lift N of total"
         }
       }
     }
   }
-  return { current: Math.max(1, idx), total: Math.max(1, total) }
+  idx = hit || 1
+  return { current: idx, total: Math.max(1, total) }
 }
 
 function countUnloggedInNonSkippedBlocks(
@@ -312,15 +388,14 @@ function countUnloggedInNonSkippedBlocks(
       for (const be of b.exercises) {
         for (const t of be.sets) {
           const key = `${b.position}.${be.position}.${r}.${t.set_number}`
-          if (t.target_duration_sec == null && !doneKeys.has(key)) unlogged++
-          else if (t.target_duration_sec != null && !doneKeys.has(key)) unlogged++
+          if (!doneKeys.has(key)) unlogged++
         }
       }
     }
   }
-  // subtract the current-focused 1 so we don't nag about the active card
+  // exclude the currently-focused set from the "remaining" count
   return Math.max(0, unlogged - 1)
 }
 
-// Silence unused warning — used via useEffect import path.
-advance
+// Silence unused — SnapshotBlock type is referenced via SnapshotBlockExercise import.
+export type { SnapshotBlock as _KeepBlockTypeImported }

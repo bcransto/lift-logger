@@ -68,23 +68,26 @@ const block_exercises = [
   { id: 'be_b1_tri', block_id: 'wb_b1', exercise_id: 'ex_tricep_ext', position: 2, alt_exercise_ids: '[]', created_at: now, updated_at: now },
 ];
 
-const mkSet = (id, be, n, w, r, peak = false) => ({
+const mkSet = (id, be, n, w, r, peak = false, rest = 0) => ({
   id, block_exercise_id: be, set_number: n,
   target_weight: w, target_pct_1rm: null, target_reps: r,
   target_reps_each: 0, target_duration_sec: null, target_rpe: null,
-  is_peak: peak ? 1 : 0, rest_after_sec: null, notes: null,
+  is_peak: peak ? 1 : 0, rest_after_sec: rest || null, notes: null,
   created_at: now, updated_at: now,
 });
 
 const block_exercise_sets = [
-  mkSet('bes_a1_1', 'be_a1_squat', 1, 135, 12),
-  mkSet('bes_a1_2', 'be_a1_squat', 2, 155, 10),
-  mkSet('bes_a1_3', 'be_a1_squat', 3, 175, 8),
-  mkSet('bes_a1_4', 'be_a1_squat', 4, 185, 6, true),
-  mkSet('bes_a2a_1', 'be_a2_ext', 1, 80, 12),
+  // Smith Squat pyramid: 3 min rest between pyramid sets; no rest after the top set.
+  mkSet('bes_a1_1', 'be_a1_squat', 1, 135, 12, false, 180),
+  mkSet('bes_a1_2', 'be_a1_squat', 2, 155, 10, false, 180),
+  mkSet('bes_a1_3', 'be_a1_squat', 3, 175, 8,  false, 180),
+  mkSet('bes_a1_4', 'be_a1_squat', 4, 185, 6,  true),
+  // Leg Ext + Curl superset: no rest between stations, block-level 120s between rounds.
+  mkSet('bes_a2a_1', 'be_a2_ext',  1, 80, 12),
   mkSet('bes_a2b_1', 'be_a2_curl', 1, 70, 12),
+  // Arm Day superset: same.
   mkSet('bes_b1a_1', 'be_b1_curl', 1, 30, 12),
-  mkSet('bes_b1b_1', 'be_b1_tri', 1, 40, 12),
+  mkSet('bes_b1b_1', 'be_b1_tri',  1, 40, 12),
 ];
 
 const payload = {
