@@ -98,6 +98,13 @@ export function BlockView() {
 
   // Gestures on the main container: swipe LEFT-to-RIGHT → Workout view; swipe
   // RIGHT-to-LEFT → Set view. Bounded; overlays close via their own back.
+  //
+  // IMPORTANT: only attach these handlers when no overlay is open. Otherwise
+  // the overlay's own swipe handler (which closes the overlay) bubbles the
+  // same gesture up to BlockView and we'd re-open the *other* overlay on a
+  // single swipe — leaving the user oscillating between Set and Workout and
+  // never returning to the Block view. `useSwipeable` must be called
+  // unconditionally (hook rules), so we gate attachment via the spread.
   const swipeHandlers = useSwipeable({
     onSwipedRight: () => openOverlay('workout'),
     onSwipedLeft: () => openOverlay('set'),
@@ -105,6 +112,7 @@ export function BlockView() {
     trackMouse: false,
     preventScrollOnSwipe: false,
   })
+  const activeSwipeHandlers = overlay === null ? swipeHandlers : {}
 
   if (!sessionId) return <div className={styles.empty}>No session.</div>
   if (!session || !snapshot) return <div className={styles.empty}>Loading…</div>
@@ -192,7 +200,7 @@ export function BlockView() {
   }
 
   return (
-    <div className={styles.root} {...swipeHandlers}>
+    <div className={styles.root} {...activeSwipeHandlers}>
       <header className={styles.header}>
         <div className={styles.eyebrow}>
           LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart} ELAPSED
