@@ -10,9 +10,10 @@ type Props = {
   beName: string
   round: number | null
   totalRounds: number | null
+  onTap?: () => void
 }
 
-export function WorkSetCard({ target, isFocused, isDone, actual, round, totalRounds }: Props) {
+export function WorkSetCard({ target, isFocused, isDone, actual, round, totalRounds, onTap }: Props) {
   const isTimed = target.target_duration_sec != null
   const cls = [
     styles.card,
@@ -35,8 +36,8 @@ export function WorkSetCard({ target, isFocused, isDone, actual, round, totalRou
         ? `${target.target_duration_sec}s`
         : '—'
 
-  return (
-    <div className={cls}>
+  const body = (
+    <>
       <div className={styles.label}>
         SET {target.set_number}
         {round != null && totalRounds != null ? ` · R${round}/${totalRounds}` : ''}
@@ -54,6 +55,14 @@ export function WorkSetCard({ target, isFocused, isDone, actual, round, totalRou
           {actual.actual_reps ?? actual.actual_duration_sec ?? '—'}
         </div>
       ) : null}
-    </div>
+    </>
   )
+  if (onTap) {
+    return (
+      <button type="button" className={cls} onClick={onTap}>
+        {body}
+      </button>
+    )
+  }
+  return <div className={cls}>{body}</div>
 }

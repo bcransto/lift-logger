@@ -1,11 +1,11 @@
-// Set view overlay — swipe-right-to-left from Block view. Always targets the
-// currently focused set (cursor). Weight / reps / duration steppers. Edits
-// stash on sessions.pending_actuals; logSet consumes them on Next or timer
-// zero. Active timer pinned at top.
+// Set view overlay — opened by tapping a work card in Block view. Always
+// targets the currently focused set (cursor), which `BlockView.onTap` jumps
+// to at open time. Weight / reps / duration steppers. Edits stash on
+// sessions.pending_actuals; logSet consumes them on Next or timer zero.
+// Active timer pinned at top. Closed via the header Back button.
 
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useSwipeable } from 'react-swipeable'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { NumberStepper } from '../../shared/components/NumberStepper'
@@ -53,12 +53,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
     setDuration(pendingActuals?.actual_duration_sec ?? target.target_duration_sec ?? null)
   }, [target, pendingActuals])
 
-  // Swipe left-to-right closes the overlay (back to Block view).
-  const swipe = useSwipeable({
-    onSwipedRight: onClose,
-    delta: 40,
-    preventScrollOnSwipe: false,
-  })
+  // Close via the header "← Back" button. No swipe gestures (tap-driven).
 
   const commit = async () => {
     const patch: PendingActuals = {
@@ -81,7 +76,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
 
   if (!target) return null
   return (
-    <div className={styles.overlay} {...swipe}>
+    <div className={styles.overlay}>
       <header className={styles.header}>
         <button className={styles.back} onClick={onClose}>← Back</button>
         <div className={styles.eyebrow}>EDIT SET {target.set_number}</div>

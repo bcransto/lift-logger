@@ -7,6 +7,16 @@
   flex-direction: column;
   gap: var(--space-1);
   min-height: 96px;
+  /* Normalize <button> defaults so this is a tappable card. */
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:active {
+  transform: scale(0.99);
 }
 
 .focused {

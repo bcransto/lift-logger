@@ -1,11 +1,11 @@
-// Workout view overlay — swipe-left-to-right from Block view. Shows all blocks
-// with status (done/current/skipped/pending). Actions: Skip Block, Return to
-// skipped block, End Workout. Tap a block to jump cursor there.
+// Workout view overlay — opened via the "Workout" button in Block view header.
+// Shows all blocks with status (done/current/skipped/pending). Actions: Skip
+// Block, Return to skipped block, End Workout. Closed via the header Back
+// button.
 
 import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
-import { useSwipeable } from 'react-swipeable'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
@@ -33,12 +33,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
     try { return JSON.parse(session.workout_snapshot) as WorkoutSnapshot } catch { return null }
   }, [session])
 
-  // Swipe right-to-left (content moves left) closes the overlay.
-  const swipe = useSwipeable({
-    onSwipedLeft: onClose,
-    delta: 40,
-    preventScrollOnSwipe: false,
-  })
+  // Close via the header "← Back" button. No swipe gestures.
 
   if (!snapshot) return null
 
@@ -86,7 +81,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
   }
 
   return (
-    <div className={styles.overlay} {...swipe}>
+    <div className={styles.overlay}>
       <header className={styles.header}>
         <button className={styles.back} onClick={onClose}>← Back</button>
         <div className={styles.eyebrow}>WORKOUT</div>

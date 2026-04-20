@@ -13,7 +13,6 @@
 import { useEffect, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useSwipeable } from 'react-swipeable'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -96,23 +95,10 @@ export function BlockView() {
     }
   }, [cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber, snapshot, session, startWorkTimer])
 
-  // Gestures on the main container: swipe LEFT-to-RIGHT → Workout view; swipe
-  // RIGHT-to-LEFT → Set view. Bounded; overlays close via their own back.
-  //
-  // IMPORTANT: only attach these handlers when no overlay is open. Otherwise
-  // the overlay's own swipe handler (which closes the overlay) bubbles the
-  // same gesture up to BlockView and we'd re-open the *other* overlay on a
-  // single swipe — leaving the user oscillating between Set and Workout and
-  // never returning to the Block view. `useSwipeable` must be called
-  // unconditionally (hook rules), so we gate attachment via the spread.
-  const swipeHandlers = useSwipeable({
-    onSwipedRight: () => openOverlay('workout'),
-    onSwipedLeft: () => openOverlay('set'),
-    delta: 40,
-    trackMouse: false,
-    preventScrollOnSwipe: false,
-  })
-  const activeSwipeHandlers = overlay === null ? swipeHandlers : {}
+  // Navigation is tap-driven (not swipe). Tapping a work card jumps the cursor
+  // to that set and opens the Set view. A Workout button in the header opens
+  // the Workout view. Both overlays have back buttons. Much more reliable than
+  // gesture detection on a touch-heavy app, and matches iOS conventions.
 
   if (!sessionId) return <div className={styles.empty}>No session.</div>
   if (!session || !snapshot) return <div className={styles.empty}>Loading…</div>
@@ -200,12 +186,13 @@ export function BlockView() {
   }
 
   return (
-    <div className={styles.root} {...activeSwipeHandlers}>
+    <div className={styles.root}>
       <header className={styles.header}>
         <div className={styles.eyebrow}>
           LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart} ELAPSED
         </div>
         <div className={styles.actions}>
+          <button className={styles.actionBtn} onClick={() => openOverlay('workout')}>Workout</button>
           <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
           <button className={styles.actionBtn} onClick={onEnd}>End</button>
         </div>
@@ -241,6 +228,10 @@ export function BlockView() {
               beName={be.name}
               round={block.kind !== 'single' ? c.cursor.roundNumber : null}
               totalRounds={block.kind !== 'single' ? rounds : null}
+              onTap={() => {
+                jumpTo(c.cursor)
+                openOverlay('set')
+              }}
             />
           ) : (
             <RestCard

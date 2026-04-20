@@ -290,24 +290,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!entry) return
     const now = Date.now()
 
-    // Merge priority: explicit input > pendingActuals stash > targets.
-    const actualWeight =
-      input?.actualWeight ??
-      pendingActuals?.actual_weight ??
-      entry.target.target_weight ??
-      null
-    const actualReps =
-      input?.actualReps ?? pendingActuals?.actual_reps ?? entry.target.target_reps ?? null
-    const actualDurationSec =
-      input?.actualDurationSec ??
-      pendingActuals?.actual_duration_sec ??
-      entry.target.target_duration_sec ??
-      null
-    const rpe = input?.rpe ?? pendingActuals?.rpe ?? null
-    const restTakenSec = input?.restTakenSec ?? null
-    // Future: propagate notes when SessionSetRow gains a notes column; for now
-    // pendingActuals.notes is captured but unused in the row. Intentional.
-
     // Upsert-by-tuple: find an existing row keyed on
     // (session_id, block_position, block_exercise_position, round_number, set_number).
     // The Dexie compound index (v2) makes this O(log n). Server-side UNIQUE
@@ -322,6 +304,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         cursor.setNumber,
       ])
       .first()
+
+    // Merge priority: explicit input > pendingActuals stash > existing row's
+    // prior actuals (important for re-logging a done card without edits —
+    // we must not wipe its values by defaulting to target) > target.
+    const actualWeight =
+      input?.actualWeight ??
+      pendingActuals?.actual_weight ??
+      existing?.actual_weight ??
+      entry.target.target_weight ??
+      null
+    const actualReps =
+      input?.actualReps ??
+      pendingActuals?.actual_reps ??
+      existing?.actual_reps ??
+      entry.target.target_reps ??
+      null
+    const actualDurationSec =
+      input?.actualDurationSec ??
+      pendingActuals?.actual_duration_sec ??
+      existing?.actual_duration_sec ??
+      entry.target.target_duration_sec ??
+      null
+    const rpe = input?.rpe ?? pendingActuals?.rpe ?? existing?.rpe ?? null
+    const restTakenSec = input?.restTakenSec ?? existing?.rest_taken_sec ?? null
+    // Future: propagate notes when SessionSetRow gains a notes column; for now
+    // pendingActuals.notes is captured but unused in the row. Intentional.
 
     const row: SessionSetRow = {
       id: (existing?.id ?? uuid('ss')) as SessionSetId,
