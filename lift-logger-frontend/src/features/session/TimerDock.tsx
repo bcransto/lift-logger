@@ -29,18 +29,25 @@ export function TimerDock({
   onWorkZero,
 }: Props) {
   const pausedAt = useSessionStore((s) => s.pausedAt)
+  const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const pause = useSessionStore((s) => s.pause)
   const resume = useSessionStore((s) => s.resume)
+  const skipRest = useSessionStore((s) => s.skipRest)
   const adjustWorkTimer = useSessionStore((s) => s.adjustWorkTimer)
 
   // Re-render on tick to keep the countdown fresh.
   const [, force] = useStateTick()
   useTick(true, force, 250)
 
+  // If the user tapped Skip Rest after the last log, suppress the rest
+  // derivation until a fresh log happens. (Work timer is unaffected.)
+  const restSuppressed =
+    restSkippedAt != null && lastLoggedAt != null && restSkippedAt > lastLoggedAt
+
   const active: DerivedTimer | null = deriveActiveTimer(
     {
-      lastLoggedAt,
-      lastLoggedRestAfterSec,
+      lastLoggedAt: restSuppressed ? null : lastLoggedAt,
+      lastLoggedRestAfterSec: restSuppressed ? null : lastLoggedRestAfterSec,
       workTimerStartedAt,
       workTimerDurationSec,
       pausedAt,
@@ -82,7 +89,9 @@ export function TimerDock({
               <button className={styles.step} onClick={() => adjustWorkTimer(-15)}>−15</button>
               <button className={styles.step} onClick={() => adjustWorkTimer(15)}>+15</button>
             </>
-          ) : null}
+          ) : (
+            <button className={styles.step} onClick={skipRest}>Skip</button>
+          )}
           <button className={styles.step} onClick={() => (pausedAt ? resume() : pause())}>
             {pausedAt ? 'Resume' : 'Pause'}
           </button>

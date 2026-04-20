@@ -106,16 +106,17 @@ export function BlockView() {
     }
   }, [cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber, snapshot, session, startWorkTimer])
 
+  // Workout complete: cursor becomes null after the final logSet advance.
+  // Navigate to Summary once. Lives at top-level to obey React's hook rules.
+  useEffect(() => {
+    if (sessionId && snapshot && !cursor) {
+      navigate(`/session/${sessionId}/summary`, { replace: true })
+    }
+  }, [cursor, sessionId, snapshot, navigate])
+
   if (!sessionId) return <div className={styles.empty}>No session.</div>
   if (!session || !snapshot) return <div className={styles.empty}>Loading…</div>
-  if (!cursor) {
-    // Workout complete — route to summary.
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useEffect(() => {
-      navigate(`/session/${sessionId}/summary`, { replace: true })
-    })
-    return null
-  }
+  if (!cursor) return null // the useEffect above navigates us away
 
   const bp = Number.parseInt(bpStr ?? '1', 10)
   const block = snapshot.blocks.find((b) => b.position === bp)

@@ -103,6 +103,13 @@ export type SessionState = {
   setPendingActuals: (patch: PendingActuals | null) => Promise<void>
   startWorkTimer: (durationSec: number) => Promise<void>
   adjustWorkTimer: (deltaSec: number) => Promise<void>
+  skipRest: () => void
+  /**
+   * When non-null, suppresses the rest timer until the next log/advance.
+   * Compared against the latest logged_at: if restSkippedAt > logged_at,
+   * the rest derivation is hidden.
+   */
+  restSkippedAt: number | null
 }
 
 // ─── helpers (pure, exported for tests) ───────────────────────────────
@@ -192,6 +199,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   skippedBlockIds: new Set<string>(),
   accumulatedPausedMs: 0,
   pendingActuals: null,
+  restSkippedAt: null,
 
   async hydrate() {
     const actives = await db.sessions.where('status').equals('active').toArray()
@@ -369,6 +377,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       loggedCount: existing ? get().loggedCount : get().loggedCount + 1,
       timer: IDLE_TIMER,
       pendingActuals: null,
+      restSkippedAt: null, // a fresh log resets any skipped-rest flag
     })
   },
 
@@ -517,7 +526,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         updated_at: now,
       })
     }
-    set({ cursor: next, pendingActuals: null, timer: IDLE_TIMER })
+    set({ cursor: next, pendingActuals: null, timer: IDLE_TIMER, restSkippedAt: null })
     return { undoCursor }
   },
 
@@ -640,6 +649,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       work_timer_duration_sec: nextDuration,
       updated_at: now,
     })
+  },
+
+  /**
+   * Skip the currently-running rest timer. Rest is derived from
+   * (last_logged.logged_at + rest_after_sec), so we record a timestamp that
+   * suppresses the rest until the next log. Resets on the next logSet or
+   * on page reload (in-memory only).
+   */
+  skipRest() {
+    set({ restSkippedAt: Date.now() })
   },
 }))
 
