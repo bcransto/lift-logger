@@ -3,3 +3,4 @@ node_modules/
 lift-logger-api/data/
 lift-logger-api/public/
 .claude/
+CLAUDE.md
