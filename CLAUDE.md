@@ -152,8 +152,8 @@ MCP (Model Context Protocol) server for workout analysis and planning via Claude
 
 ### Setup
 - **Install**: `cd lift-logger-mcp && npm install`
-- **Run locally**: `node server.js` (runs on port 3001)
-- **Test**: `curl http://localhost:3001/health`
+- **Run stdio server**: `node server.js` (for Claude Desktop via SSH)
+- **Run remote server**: `node server-remote.js` (Streamable HTTP on port 3002)
 
 ### Tools
 - **`list_exercises`**: All exercises (optionally include soft-deleted)
@@ -167,18 +167,35 @@ MCP (Model Context Protocol) server for workout analysis and planning via Claude
 - **`create_workout`**: Create workout template. Params: `name`, `exerciseIds` (comma-separated)
 
 ### Architecture
-- Stdio transport over SSH (Claude Desktop launches via `ssh bcransto@100.75.94.59 node ...`)
+- **Two transports**: `server.js` (stdio for Claude Desktop via SSH) and `server-remote.js` (Streamable HTTP for Claude.ai via Cloudflare)
+- Both share the same tool handlers in `tools/` and the same DB singleton in `db.js`
 - Direct SQLite access to `../lift-logger-api/data/liftlogger.db` (WAL mode for concurrent reads)
-- Deps: `@modelcontextprotocol/sdk`, `better-sqlite3`
+- `server-remote.js` uses stateless mode — each POST to `/mcp` creates a fresh McpServer instance
+- Deps: `@modelcontextprotocol/sdk`, `better-sqlite3`, `express`, `cors`, `zod`
 
 ### Claude Desktop Config
 Configured in `~/Library/Application Support/Claude/claude_desktop_config.json` using SSH stdio transport (same pattern as other MCP servers).
+
+### Claude.ai Config
+Configured as a Connector in Claude.ai Settings via Cloudflare MCP Portal: URL `https://lift-portal.938752.xyz/mcp`
+See `CLOUDFLARE-MCP-PORTAL.md` for full setup details.
 
 ### Deployment
 ```bash
 # After git push + pull on Pi:
 ssh bcransto@pinto "cd ~/lift-logger-repo/lift-logger-mcp && npm install"
-# No service restart needed — Claude Desktop launches the process on demand via SSH
+
+# Restart remote transport service (stdio doesn't need restart — launched on demand)
+ssh bcransto@pinto "sudo systemctl restart lift-logger-mcp-remote"
+```
+
+### Service management (remote transport on Pi)
+```bash
+sudo systemctl status lift-logger-mcp-remote    # Check status
+sudo systemctl restart lift-logger-mcp-remote   # Restart
+journalctl -u lift-logger-mcp-remote -f         # View logs
+# Endpoint: https://lift.938752.xyz/mcp (via Cloudflare Tunnel pinto-apps-tunnel)
+# Portal: https://lift-portal.938752.xyz/mcp (authenticated access via Cloudflare AI Controls)
 ```
 
 ## Code Patterns
