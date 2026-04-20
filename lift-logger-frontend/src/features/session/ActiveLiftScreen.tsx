@@ -36,25 +36,21 @@ export function ActiveLiftScreen() {
   const loggedCount = useSessionStore((s) => s.loggedCount)
   const jumpTo = useSessionStore((s) => s.jumpTo)
 
-  // Align cursor with URL params when they change (e.g. after refresh).
+  // Sync cursor FROM the URL on URL changes (mount, browser back/forward, direct
+  // navigate from logSet). Intentionally does NOT depend on cursor — otherwise
+  // logSet's store update would race the URL change and the effect would snap
+  // cursor back to the stale URL before navigate lands.
   useEffect(() => {
     const bp = Number.parseInt(bpStr ?? '1', 10)
     const parsed = parseSetKey(setKey ?? '')
     if (!parsed) return
-    if (
-      cursor?.blockPosition !== bp ||
-      cursor?.blockExercisePosition !== parsed.blockExercisePosition ||
-      cursor?.roundNumber !== parsed.roundNumber ||
-      cursor?.setNumber !== parsed.setNumber
-    ) {
-      jumpTo({
-        blockPosition: bp,
-        blockExercisePosition: parsed.blockExercisePosition,
-        roundNumber: parsed.roundNumber,
-        setNumber: parsed.setNumber,
-      })
-    }
-  }, [bpStr, setKey, cursor, jumpTo])
+    jumpTo({
+      blockPosition: bp,
+      blockExercisePosition: parsed.blockExercisePosition,
+      roundNumber: parsed.roundNumber,
+      setNumber: parsed.setNumber,
+    })
+  }, [bpStr, setKey, jumpTo])
 
   const entry = snapshot && cursor ? targetAt(snapshot, cursor) : null
   const total = snapshot ? totalSetCount(snapshot) : 0

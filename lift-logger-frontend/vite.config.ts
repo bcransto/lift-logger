@@ -51,7 +51,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
+      // Port can be overridden via VITE_API_PORT if needed.
+      '/api': `http://localhost:${process.env.VITE_API_PORT ?? '3000'}`,
     },
   },
   test: {
