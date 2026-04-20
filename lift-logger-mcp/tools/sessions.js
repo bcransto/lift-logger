@@ -81,7 +81,16 @@ function getSessionHistory({ workoutId, status, startDate, endDate, limit = 50 }
     totalVolume: r.total_volume,
     prCount: r.pr_count,
     updatedAt: r.updated_at,
+    // Phase 2 fields
+    pausedAt: r.paused_at ?? null,
+    skippedBlockIds: safeParseArray(r.skipped_block_ids),
+    accumulatedPausedMs: r.accumulated_paused_ms ?? 0,
   }));
+}
+
+function safeParseArray(s) {
+  if (!s) return [];
+  try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
 /**
@@ -132,6 +141,13 @@ function getSession({ sessionId }) {
     savePreference: session.save_preference,
     notes: session.notes,
     updatedAt: session.updated_at,
+    // Phase 2 fields
+    pausedAt: session.paused_at ?? null,
+    skippedBlockIds: safeParseArray(session.skipped_block_ids),
+    accumulatedPausedMs: session.accumulated_paused_ms ?? 0,
+    workTimerStartedAt: session.work_timer_started_at ?? null,
+    workTimerDurationSec: session.work_timer_duration_sec ?? null,
+    pendingActuals: session.pending_actuals ? (() => { try { return JSON.parse(session.pending_actuals); } catch { return null; } })() : null,
     snapshot,
     exercises: Array.from(byExercise.values()),
   };
