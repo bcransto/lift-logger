@@ -136,6 +136,7 @@ export function BlockView() {
     | { kind: 'work'; cursor: Cursor; target: SnapshotSetTarget; be: SnapshotBlockExercise; row: SessionSetRow | undefined }
     | { kind: 'rest'; afterKey: string; durationSec: number; isActive: boolean }
     | { kind: 'next'; afterKey: string; active: boolean }
+    | { kind: 'finishBlock'; afterKey: string; active: boolean; isTimed: boolean; isLastBlockOverall: boolean }
   const cards: Card[] = []
   const bes = block.exercises.slice().sort((a, b) => a.position - b.position)
 
@@ -166,7 +167,25 @@ export function BlockView() {
         const isLastBeInRound = beIdx === bes.length - 1
         const isLastRound = r === rounds
         const isLastOverall = isLastSetInBe && isLastBeInRound && isLastRound
-        if (isLastOverall) continue
+        if (isLastOverall) {
+          // Terminal "Finish Block" card — caps the stack and gives the user
+          // an explicit advance for rep-based final sets. For timed finals
+          // the work timer handles advancement; we still render the card
+          // (disabled) as a visual end-of-block affordance.
+          const lastBlockInWorkout = snapshot.blocks
+            .filter((b) => !skippedBlockIds.has(b.id))
+            .sort((a, b) => a.position - b.position)
+            .at(-1)
+          const isLastBlockOverall = lastBlockInWorkout?.id === block.id
+          cards.push({
+            kind: 'finishBlock',
+            afterKey: key,
+            active: cursorK === key,
+            isTimed: t.target_duration_sec != null,
+            isLastBlockOverall,
+          })
+          continue
+        }
 
         // Inter-card slot: rest card or inline Next button.
         // Rest duration: at a round boundary (last-set-of-last-BE-but-more-rounds-coming),
@@ -310,6 +329,22 @@ export function BlockView() {
           }
           if (c.kind === 'rest') {
             return <RestCard key={`r${i}`} durationSec={c.durationSec} isActive={c.isActive} />
+          }
+          if (c.kind === 'finishBlock') {
+            const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Finish Block'
+            return (
+              <div key={`f${i}`} className={styles.finishBlockWrap}>
+                <button
+                  className={`${styles.finishBlock} ${c.active && !c.isTimed ? styles.finishBlockActive : ''}`}
+                  onClick={c.active && !c.isTimed ? onInlineNext : undefined}
+                  disabled={!c.active || c.isTimed}
+                  aria-label={label}
+                >
+                  {label}
+                  {c.active && c.isTimed ? <span className={styles.finishHint}> · auto on timer zero</span> : null}
+                </button>
+              </div>
+            )
           }
           // inline Next button
           return (

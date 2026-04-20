@@ -122,3 +122,46 @@
   cursor: pointer;
 }
 .inlineNextActive:active { transform: scale(0.98); }
+
+/* Terminal "Finish Block" / "Finish Workout" card — caps the stack. */
+.finishBlockWrap {
+  display: flex;
+  justify-content: stretch;
+  padding: var(--space-2) 0 0;
+  margin-top: var(--space-2);
+}
+
+.finishBlock {
+  flex: 1;
+  min-height: 52px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-faint);
+  border: 1px dashed var(--border-strong);
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.finishBlockActive {
+  background: var(--ok);
+  color: #0a0a0a;
+  border: 1px solid var(--ok);
+  font-size: 16px;
+  opacity: 1;
+  cursor: pointer;
+}
+.finishBlockActive:active { transform: scale(0.99); }
+
+.finishHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-weight: normal;
+}
