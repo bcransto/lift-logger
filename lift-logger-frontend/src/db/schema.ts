@@ -50,5 +50,13 @@ export class IronDb extends Dexie {
       sync_meta: 'table',
       settings: 'key',
     })
+    // v2 — Phase 2: compound index on session_sets tuple so logSet's upsert-by-tuple
+    // lookup is O(log n) instead of a full scan. No data migration needed — non-indexed
+    // fields on other tables (SessionRow gains 6 nullable columns) are tolerated by Dexie.
+    this.version(2).stores({
+      session_sets:
+        'id, session_id, exercise_id, logged_at, updated_at, ' +
+        '[session_id+block_position+block_exercise_position+round_number+set_number]',
+    })
   }
 }

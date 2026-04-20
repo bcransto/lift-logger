@@ -112,6 +112,22 @@ export type SessionRow = {
   save_preference: SavePreference
   created_at: number
   updated_at: number
+  // Phase 2 additions (schema v2)
+  paused_at: number | null
+  skipped_block_ids: string | null // JSON array of block ids
+  work_timer_started_at: number | null
+  work_timer_duration_sec: number | null
+  accumulated_paused_ms: number | null // treat null as 0
+  pending_actuals: string | null // JSON of PendingActuals
+}
+
+// Phase 2: stash for Set-view edits on the focused set. Applied to session_sets on logSet.
+export type PendingActuals = {
+  actual_weight?: number | null
+  actual_reps?: number | null
+  actual_duration_sec?: number | null
+  rpe?: number | null
+  notes?: string | null
 }
 
 export type SessionSetRow = {

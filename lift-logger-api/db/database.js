@@ -32,7 +32,7 @@ db.pragma('foreign_keys = ON');
 
 db.exec(schema);
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Migrations — list of { version, up(db) } applied in ascending order.
@@ -46,8 +46,60 @@ const MIGRATIONS = [
     up(/* db */) {
       // Baseline — schema.js already created the tables.
     }
+  },
+  // v2 — Phase 2: add pause / skip / timer-persistence / pending-actuals columns to sessions,
+  //       plus a UNIQUE index on session_sets tuple to prevent edit-mode duplicates.
+  // All ALTERs are guarded by table_info checks so the migration is idempotent.
+  {
+    version: 2,
+    up(database) {
+      const addColumnIfMissing = (table, name, sql) => {
+        const cols = database.prepare(`PRAGMA table_info(${table})`).all();
+        if (!cols.some((c) => c.name === name)) {
+          database.exec(sql);
+        }
+      };
+      addColumnIfMissing('sessions', 'paused_at',
+        'ALTER TABLE sessions ADD COLUMN paused_at INTEGER');
+      addColumnIfMissing('sessions', 'skipped_block_ids',
+        'ALTER TABLE sessions ADD COLUMN skipped_block_ids TEXT');
+      addColumnIfMissing('sessions', 'work_timer_started_at',
+        'ALTER TABLE sessions ADD COLUMN work_timer_started_at INTEGER');
+      addColumnIfMissing('sessions', 'work_timer_duration_sec',
+        'ALTER TABLE sessions ADD COLUMN work_timer_duration_sec INTEGER');
+      // Nullable so clients that don't yet send the field can insert cleanly via
+      // the generic upsertRow (which passes null for missing cols). Treat null as 0.
+      addColumnIfMissing('sessions', 'accumulated_paused_ms',
+        'ALTER TABLE sessions ADD COLUMN accumulated_paused_ms INTEGER');
+      addColumnIfMissing('sessions', 'pending_actuals',
+        'ALTER TABLE sessions ADD COLUMN pending_actuals TEXT');
+      // Dedupe session_sets before adding the unique index — pre-Phase-2 logSet
+      // always generated a new id per call, so edit attempts produced multiple rows
+      // per tuple. Keep the newest (highest updated_at) per tuple, delete the rest.
+      database.exec(`
+        DELETE FROM session_sets
+        WHERE id IN (
+          SELECT id FROM session_sets ss1
+          WHERE EXISTS (
+            SELECT 1 FROM session_sets ss2
+            WHERE ss2.session_id = ss1.session_id
+              AND ss2.block_position = ss1.block_position
+              AND ss2.block_exercise_position = ss1.block_exercise_position
+              AND ss2.round_number = ss1.round_number
+              AND ss2.set_number = ss1.set_number
+              AND (ss2.updated_at > ss1.updated_at
+                   OR (ss2.updated_at = ss1.updated_at AND ss2.id > ss1.id))
+          )
+        )
+      `);
+      // Belt-and-suspenders: prevent duplicate session_sets rows with the same tuple.
+      // Phase 2 introduces edit-mode which must upsert, not insert; this catches client drift.
+      database.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_session_sets_tuple
+          ON session_sets(session_id, block_position, block_exercise_position, round_number, set_number)
+      `);
+    }
   }
-  // Future migrations go here, e.g. { version: 2, up(db) { db.exec('ALTER TABLE …'); } }
 ];
 
 function runMigrations(database) {
@@ -114,7 +166,11 @@ const TABLE_COLUMNS = {
   ],
   sessions: [
     'workout_id', 'workout_snapshot', 'started_at', 'ended_at', 'duration_sec',
-    'status', 'notes', 'save_preference', 'created_at'
+    'status', 'notes', 'save_preference', 'created_at',
+    // v2 additions (Phase 2)
+    'paused_at', 'skipped_block_ids',
+    'work_timer_started_at', 'work_timer_duration_sec',
+    'accumulated_paused_ms', 'pending_actuals'
   ],
   session_sets: [
     'session_id', 'exercise_id', 'block_position', 'block_exercise_position',

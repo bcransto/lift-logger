@@ -181,6 +181,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       save_preference: null,
       created_at: now,
       updated_at: now,
+      // Phase 2 fields — all start null.
+      paused_at: null,
+      skipped_block_ids: null,
+      work_timer_started_at: null,
+      work_timer_duration_sec: null,
+      accumulated_paused_ms: null,
+      pending_actuals: null,
     }
     await db.sessions.put(row)
     // Mark workout.last_performed for Home sort ordering.
