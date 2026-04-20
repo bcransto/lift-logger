@@ -1,0 +1,19 @@
+.pattern {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.arrow {
+  color: var(--text-faint);
+}
+
+.peak {
+  color: var(--accent-2);
+}
+
+.empty {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}

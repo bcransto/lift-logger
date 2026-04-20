@@ -1,0 +1,33 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  min-height: 32px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.green { background: var(--ok); box-shadow: 0 0 6px rgba(139, 195, 74, 0.6); }
+.amber { background: var(--accent-2); box-shadow: 0 0 6px rgba(255, 194, 31, 0.6); animation: pulse 1s ease-in-out infinite; }
+.red   { background: #cc3a2a; }
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
