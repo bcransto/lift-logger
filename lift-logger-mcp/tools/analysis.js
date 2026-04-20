@@ -1,107 +1,99 @@
-const db = require('../db');
+const { db } = require('../db');
 
+/**
+ * get_prs — exercise_prs joined with exercise names. Optionally filter by
+ * exerciseId or pr_type. These rows are *only* written by the sync handler's
+ * PR-computation path, never by MCP tools.
+ */
+function getPRs({ exerciseId, prType } = {}) {
+  const where = [];
+  const params = [];
+
+  if (exerciseId) { where.push('pr.exercise_id = ?'); params.push(exerciseId); }
+  if (prType)     { where.push('pr.pr_type = ?');     params.push(prType); }
+
+  const sql = `
+    SELECT pr.*, e.name AS exercise_name
+    FROM exercise_prs pr
+    LEFT JOIN exercises e ON e.id = pr.exercise_id
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY e.name ASC, pr.pr_type ASC
+  `;
+
+  return db.prepare(sql).all(...params).map(r => ({
+    id: r.id,
+    exerciseId: r.exercise_id,
+    exerciseName: r.exercise_name,
+    prType: r.pr_type,
+    value: r.value,
+    weight: r.weight,
+    reps: r.reps,
+    sessionSetId: r.session_set_id,
+    achievedAt: r.achieved_at,
+    updatedAt: r.updated_at
+  }));
+}
+
+/**
+ * get_volume_summary — aggregate set count / reps / volume grouped by
+ * exercise | workout | week | day. Date args are epoch millis.
+ */
 function getVolumeSummary({ startDate, endDate, groupBy }) {
-  let groupExpr, groupLabel;
+  if (startDate === undefined || endDate === undefined) {
+    throw new Error('startDate and endDate (epoch millis) are required');
+  }
+
+  let groupExpr, groupLabel, joinClauses = '';
 
   switch (groupBy) {
     case 'exercise':
-      groupExpr = 'r.exercise_id';
+      groupExpr = 'ss.exercise_id';
       groupLabel = 'e.name';
       break;
     case 'workout':
-      groupExpr = 'r.workout_id';
+      groupExpr = 's.workout_id';
       groupLabel = 'w.name';
       break;
     case 'week':
-      // ISO week: group by year-week
-      groupExpr = "strftime('%Y-W%W', r.date)";
-      groupLabel = "strftime('%Y-W%W', r.date)";
+      // strftime with epoch millis: divide by 1000 to get seconds.
+      groupExpr = "strftime('%Y-W%W', datetime(ss.performed_at/1000, 'unixepoch'))";
+      groupLabel = groupExpr;
       break;
     case 'day':
-      groupExpr = 'r.date';
-      groupLabel = 'r.date';
+      groupExpr = "strftime('%Y-%m-%d', datetime(ss.performed_at/1000, 'unixepoch'))";
+      groupLabel = groupExpr;
       break;
     default:
-      throw new Error(`Invalid groupBy: ${groupBy}. Must be one of: exercise, workout, week, day`);
+      throw new Error(`Invalid groupBy: ${groupBy}. Must be exercise | workout | week | day`);
   }
 
   const sql = `
     SELECT ${groupExpr} AS group_key,
            ${groupLabel} AS group_label,
            COUNT(*) AS total_sets,
-           SUM(r.reps) AS total_reps,
-           ROUND(SUM(r.weight * r.reps), 1) AS total_volume
-    FROM records r
-    LEFT JOIN exercises e ON r.exercise_id = e.id
-    LEFT JOIN workouts w ON r.workout_id = w.id
-    WHERE r.date >= ? AND r.date <= ?
+           SUM(ss.reps) AS total_reps,
+           ROUND(SUM(ss.weight * ss.reps), 2) AS total_volume
+    FROM session_sets ss
+    LEFT JOIN exercises e ON e.id = ss.exercise_id
+    LEFT JOIN sessions s ON s.id = ss.session_id
+    LEFT JOIN workouts w ON w.id = s.workout_id
+    ${joinClauses}
+    WHERE ss.is_deleted = 0
+      AND ss.is_warmup = 0
+      AND ss.weight IS NOT NULL
+      AND ss.reps IS NOT NULL
+      AND ss.performed_at >= ?
+      AND ss.performed_at <= ?
     GROUP BY group_key
-    ORDER BY ${groupBy === 'exercise' || groupBy === 'workout' ? 'total_volume DESC' : 'group_key ASC'}
+    ORDER BY ${(groupBy === 'exercise' || groupBy === 'workout') ? 'total_volume DESC' : 'group_key ASC'}
   `;
 
-  const rows = db.prepare(sql).all(startDate, endDate);
-
-  return rows.map(row => ({
-    group: row.group_label || row.group_key || 'Unknown',
-    totalSets: row.total_sets,
-    totalReps: row.total_reps,
-    totalVolume: row.total_volume
+  return db.prepare(sql).all(Number(startDate), Number(endDate)).map(r => ({
+    group: r.group_label || r.group_key || 'Unknown',
+    totalSets: r.total_sets,
+    totalReps: r.total_reps,
+    totalVolume: r.total_volume
   }));
 }
 
-function queryRecords({ exerciseId, workoutId, startDate, endDate, minWeight, maxWeight } = {}) {
-  let sql = `
-    SELECT r.id, r.date, r.workout_id, w.name AS workout_name,
-           r.exercise_id, e.name AS exercise_name,
-           r.set_num, r.weight, r.reps, r.timestamp
-    FROM records r
-    LEFT JOIN exercises e ON r.exercise_id = e.id
-    LEFT JOIN workouts w ON r.workout_id = w.id
-    WHERE 1=1
-  `;
-  const params = [];
-
-  if (exerciseId) {
-    sql += ' AND r.exercise_id = ?';
-    params.push(exerciseId);
-  }
-  if (workoutId) {
-    sql += ' AND r.workout_id = ?';
-    params.push(workoutId);
-  }
-  if (startDate) {
-    sql += ' AND r.date >= ?';
-    params.push(startDate);
-  }
-  if (endDate) {
-    sql += ' AND r.date <= ?';
-    params.push(endDate);
-  }
-  if (minWeight !== undefined) {
-    sql += ' AND r.weight >= ?';
-    params.push(minWeight);
-  }
-  if (maxWeight !== undefined) {
-    sql += ' AND r.weight <= ?';
-    params.push(maxWeight);
-  }
-
-  sql += ' ORDER BY r.date DESC, r.timestamp ASC, r.set_num ASC LIMIT 500';
-
-  const rows = db.prepare(sql).all(...params);
-
-  return rows.map(row => ({
-    id: row.id,
-    date: row.date,
-    workoutId: row.workout_id,
-    workoutName: row.workout_name || 'Unknown Workout',
-    exerciseId: row.exercise_id,
-    exerciseName: row.exercise_name || 'Unknown Exercise',
-    set: row.set_num,
-    weight: row.weight,
-    reps: row.reps,
-    timestamp: row.timestamp
-  }));
-}
-
-module.exports = { getVolumeSummary, queryRecords };
+module.exports = { getPRs, getVolumeSummary };

@@ -1,104 +1,75 @@
-const db = require('../db');
-const crypto = require('crypto');
+const { db, readWorkoutTree, upsertWorkoutTree, softDeleteWorkoutTree } = require('../db');
 
-function listWorkouts() {
-  const rows = db.prepare('SELECT id, name, exercises FROM workouts ORDER BY name').all();
-  return rows.map(row => ({
-    id: row.id,
-    name: row.name,
-    exercises: JSON.parse(row.exercises)
+/**
+ * list_workouts — summary of each non-deleted workout (id, name, block count,
+ * exercise count). Use get_workout for the full tree.
+ */
+function listWorkouts({ includeDeleted = false } = {}) {
+  const workouts = db.prepare(
+    includeDeleted
+      ? 'SELECT id, name, description, is_deleted, updated_at FROM workouts ORDER BY name ASC'
+      : 'SELECT id, name, description, is_deleted, updated_at FROM workouts WHERE is_deleted = 0 ORDER BY name ASC'
+  ).all();
+
+  const countBlocks = db.prepare(
+    'SELECT COUNT(*) AS n FROM workout_blocks WHERE workout_id = ? AND is_deleted = 0'
+  );
+  const countExercises = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM block_exercises be
+    JOIN workout_blocks wb ON wb.id = be.block_id
+    WHERE wb.workout_id = ? AND be.is_deleted = 0 AND wb.is_deleted = 0
+  `);
+
+  return workouts.map(w => ({
+    id: w.id,
+    name: w.name,
+    description: w.description,
+    isDeleted: w.is_deleted === 1,
+    updatedAt: w.updated_at,
+    blockCount: countBlocks.get(w.id).n,
+    exerciseCount: countExercises.get(w.id).n
   }));
 }
 
-function getWorkoutHistory({ startDate, endDate, workoutId, limit } = {}) {
-  let sql = `
-    SELECT r.date, r.workout_id, w.name AS workout_name,
-           r.exercise_id, e.name AS exercise_name,
-           r.set_num, r.weight, r.reps, r.timestamp
-    FROM records r
-    LEFT JOIN workouts w ON r.workout_id = w.id
-    LEFT JOIN exercises e ON r.exercise_id = e.id
-    WHERE 1=1
-  `;
-  const params = [];
-
-  if (startDate) {
-    sql += ' AND r.date >= ?';
-    params.push(startDate);
-  }
-  if (endDate) {
-    sql += ' AND r.date <= ?';
-    params.push(endDate);
-  }
-  if (workoutId) {
-    sql += ' AND r.workout_id = ?';
-    params.push(workoutId);
-  }
-
-  sql += ' ORDER BY r.date DESC, r.timestamp ASC, r.set_num ASC';
-
-  const rows = db.prepare(sql).all(...params);
-
-  // Group by date + workout
-  const grouped = {};
-  for (const row of rows) {
-    const key = `${row.date}_${row.workout_id}`;
-    if (!grouped[key]) {
-      grouped[key] = {
-        date: row.date,
-        workoutId: row.workout_id,
-        workoutName: row.workout_name || 'Unknown Workout',
-        exercises: {}
-      };
-    }
-    const session = grouped[key];
-    if (!session.exercises[row.exercise_id]) {
-      session.exercises[row.exercise_id] = {
-        exerciseId: row.exercise_id,
-        exerciseName: row.exercise_name || 'Unknown Exercise',
-        sets: []
-      };
-    }
-    session.exercises[row.exercise_id].sets.push({
-      set: row.set_num,
-      weight: row.weight,
-      reps: row.reps
-    });
-  }
-
-  // Convert exercises object to array and apply limit
-  let sessions = Object.values(grouped).map(session => ({
-    ...session,
-    exercises: Object.values(session.exercises)
-  }));
-
-  if (limit) {
-    sessions = sessions.slice(0, limit);
-  }
-
-  return sessions;
+/**
+ * get_workout — full nested tree for a single workout.
+ */
+function getWorkout({ workoutId }) {
+  const tree = readWorkoutTree(workoutId);
+  if (!tree) throw new Error(`workout not found: ${workoutId}`);
+  return tree;
 }
 
-function createWorkout({ name, exerciseIds }) {
-  // Validate exercise IDs exist
-  const exercises = [];
-  for (const exerciseId of exerciseIds) {
-    const exercise = db.prepare('SELECT id, name FROM exercises WHERE id = ? AND is_deleted = 0').get(exerciseId);
-    if (!exercise) {
-      throw new Error(`Exercise not found: ${exerciseId}`);
-    }
-    exercises.push({ exerciseId: exercise.id, name: exercise.name });
-  }
-
-  const id = `workout_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-  const updatedAt = Date.now();
-
-  db.prepare(`
-    INSERT INTO workouts (id, name, exercises, updated_at)
-    VALUES (?, ?, ?, ?)
-  `).run(id, name, JSON.stringify(exercises), updatedAt);
-
-  return { id, name, exercises, updatedAt };
+/**
+ * create_workout — create a new workout tree.
+ * Missing ids, positions, and set_numbers are auto-assigned.
+ */
+function createWorkout(payload) {
+  // Force a new id so we never collide by accident.
+  const tree = { ...payload, id: undefined };
+  return upsertWorkoutTree(tree);
 }
 
-module.exports = { listWorkouts, getWorkoutHistory, createWorkout };
+/**
+ * update_workout — upsert an existing workout tree. `id` is required.
+ * Note: rows present in the old tree but absent from the new payload are NOT
+ * auto-deleted — callers should pass explicit `id`s for anything they want
+ * preserved, and use delete_workout for full removal. For destructive edits,
+ * the caller should supply fresh ids for any rebuilt children.
+ */
+function updateWorkout(payload) {
+  if (!payload.id) throw new Error('update_workout: id is required');
+  return upsertWorkoutTree(payload);
+}
+
+/**
+ * delete_workout — soft-delete a workout and its entire tree.
+ */
+function deleteWorkout({ workoutId }) {
+  const ok = softDeleteWorkoutTree(workoutId);
+  if (!ok) throw new Error(`workout not found: ${workoutId}`);
+  return { id: workoutId, deleted: true };
+}
+
+module.exports = { listWorkouts, getWorkout, createWorkout, updateWorkout, deleteWorkout };

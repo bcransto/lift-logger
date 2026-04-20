@@ -4,7 +4,8 @@
   "description": "Backend API for Lift Logger workout tracker",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "smoke": "node scripts/smoke-iron.js"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",

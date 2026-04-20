@@ -1,169 +1,356 @@
+/**
+ * IRON backend: generic LWW upsert + per-table change feed + migrations + PR computation.
+ *
+ * Design notes:
+ *  - Each syncable table registers itself in TABLE_COLUMNS below. The shape is
+ *    simply the list of column names (excluding id + updated_at, which are always
+ *    present and handled specially).
+ *  - upsertRow(table, row) does ON CONFLICT(id) DO UPDATE … WHERE new.updated_at > existing.updated_at.
+ *  - getChangesSince(table, since) returns all rows with updated_at > since.
+ *  - PR computation for session_sets is a transactional side-effect — see recomputePRsForSessionSet.
+ *  - Agents (MCP) never touch exercise_prs; only the sync handler does, via this module.
+ */
+
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 const schema = require('./schema');
 
-const dbPath = path.join(__dirname, '..', 'data', 'liftlogger.db');
+const dataDir = path.join(__dirname, '..', 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const dbPath = path.join(dataDir, 'iron.db');
 const db = new Database(dbPath);
 
-// Initialize database with schema
+// Concurrent-safe settings
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+// -------------------- schema init + migrations --------------------
+
 db.exec(schema);
 
+const CURRENT_SCHEMA_VERSION = 1;
+
 /**
- * Upsert an exercise (Last-Write-Wins: only update if incoming updated_at > existing)
+ * Migrations — list of { version, up(db) } applied in ascending order.
+ * Each migration runs inside a transaction together with the version bump.
+ * Add future migrations at the end; never rewrite history.
  */
-function upsertExercise(exercise) {
-  const stmt = db.prepare(`
-    INSERT INTO exercises (id, name, updated_at, is_deleted)
-    VALUES (@id, @name, @updated_at, @is_deleted)
-    ON CONFLICT(id) DO UPDATE SET
-      name = @name,
-      updated_at = @updated_at,
-      is_deleted = @is_deleted
-    WHERE @updated_at > exercises.updated_at
-  `);
-  return stmt.run({
-    id: exercise.id,
-    name: exercise.name,
-    updated_at: exercise.updatedAt,
-    is_deleted: exercise.isDeleted ? 1 : 0
+const MIGRATIONS = [
+  // v1 is the baseline covered by schema.js; no-op migration body, just records the version.
+  {
+    version: 1,
+    up(/* db */) {
+      // Baseline — schema.js already created the tables.
+    }
+  }
+  // Future migrations go here, e.g. { version: 2, up(db) { db.exec('ALTER TABLE …'); } }
+];
+
+function runMigrations(database) {
+  const row = database.prepare('SELECT version FROM schema_version WHERE id = 1').get();
+  const current = row ? row.version : 0;
+
+  const pending = MIGRATIONS.filter(m => m.version > current)
+    .sort((a, b) => a.version - b.version);
+
+  if (pending.length === 0) {
+    // Make sure the schema_version row exists even on fresh DBs that run no migrations.
+    if (!row) {
+      database.prepare(
+        'INSERT INTO schema_version (id, version, updated_at) VALUES (1, ?, ?)'
+      ).run(CURRENT_SCHEMA_VERSION, Date.now());
+    }
+    return;
+  }
+
+  const apply = database.transaction(() => {
+    for (const m of pending) {
+      m.up(database);
+    }
+    const latest = pending[pending.length - 1].version;
+    const now = Date.now();
+    database.prepare(`
+      INSERT INTO schema_version (id, version, updated_at)
+      VALUES (1, @version, @updated_at)
+      ON CONFLICT(id) DO UPDATE SET version = @version, updated_at = @updated_at
+    `).run({ version: latest, updated_at: now });
   });
+
+  apply();
+}
+
+runMigrations(db);
+
+// -------------------- per-table column maps --------------------
+
+/**
+ * Column definitions for every syncable table.
+ * `id` and `updated_at` are always present and handled generically — do not list them.
+ */
+const TABLE_COLUMNS = {
+  exercises: [
+    'name', 'equipment', 'muscle_groups', 'movement_type',
+    'is_unilateral', 'starred', 'notes', 'created_at'
+  ],
+  workouts: [
+    'name', 'description', 'tags', 'starred', 'est_duration',
+    'created_by', 'created_at', 'last_performed'
+  ],
+  workout_blocks: [
+    'workout_id', 'position', 'kind', 'rounds', 'rest_after_sec',
+    'setup_cue', 'created_at'
+  ],
+  block_exercises: [
+    'block_id', 'exercise_id', 'position', 'alt_exercise_ids', 'created_at'
+  ],
+  block_exercise_sets: [
+    'block_exercise_id', 'set_number', 'target_weight', 'target_pct_1rm',
+    'target_reps', 'target_reps_each', 'target_duration_sec', 'target_rpe',
+    'is_peak', 'rest_after_sec', 'notes', 'created_at'
+  ],
+  sessions: [
+    'workout_id', 'workout_snapshot', 'started_at', 'ended_at', 'duration_sec',
+    'status', 'notes', 'save_preference', 'created_at'
+  ],
+  session_sets: [
+    'session_id', 'exercise_id', 'block_position', 'block_exercise_position',
+    'round_number', 'set_number', 'target_weight', 'target_reps',
+    'target_duration_sec', 'actual_weight', 'actual_reps', 'actual_duration_sec',
+    'rpe', 'rest_taken_sec', 'is_pr', 'was_swapped', 'logged_at', 'created_at'
+  ],
+  exercise_prs: [
+    'exercise_id', 'pr_type', 'value', 'reps', 'weight',
+    'achieved_at', 'session_id', 'created_at'
+  ]
+};
+
+const SYNC_TABLES = Object.keys(TABLE_COLUMNS);
+
+// Cache prepared statements per (table, operation) so we don't re-prepare on every call.
+const stmtCache = new Map();
+
+function getUpsertStmt(table, database = db) {
+  const key = `${database === db ? 'main' : 'tx'}::upsert::${table}`;
+  if (stmtCache.has(key)) return stmtCache.get(key);
+
+  const cols = TABLE_COLUMNS[table];
+  const allCols = ['id', ...cols, 'updated_at'];
+  const placeholders = allCols.map(c => `@${c}`).join(', ');
+  // created_at is insert-only — never update it.
+  const updateCols = cols.filter(c => c !== 'created_at').concat(['updated_at'])
+    .map(c => `${c} = @${c}`)
+    .join(', ');
+
+  const sql = `
+    INSERT INTO ${table} (${allCols.join(', ')})
+    VALUES (${placeholders})
+    ON CONFLICT(id) DO UPDATE SET ${updateCols}
+    WHERE @updated_at > ${table}.updated_at
+  `;
+  const stmt = database.prepare(sql);
+  if (database === db) stmtCache.set(key, stmt);
+  return stmt;
 }
 
 /**
- * Upsert a workout (Last-Write-Wins)
+ * Normalize an incoming row: coerce booleans to 0/1, fill missing columns with null.
+ * Unknown columns (not in TABLE_COLUMNS) are silently dropped.
  */
-function upsertWorkout(workout) {
-  const stmt = db.prepare(`
-    INSERT INTO workouts (id, name, exercises, updated_at)
-    VALUES (@id, @name, @exercises, @updated_at)
-    ON CONFLICT(id) DO UPDATE SET
-      name = @name,
-      exercises = @exercises,
-      updated_at = @updated_at
-    WHERE @updated_at > workouts.updated_at
-  `);
-  return stmt.run({
-    id: workout.id,
-    name: workout.name,
-    exercises: JSON.stringify(workout.exercises),
-    updated_at: workout.updatedAt
-  });
+function normalizeRow(table, row) {
+  if (!row || typeof row !== 'object') {
+    throw new Error(`Invalid row for ${table}`);
+  }
+  if (!row.id) throw new Error(`Missing id for ${table}`);
+  if (row.updated_at === undefined || row.updated_at === null) {
+    throw new Error(`Missing updated_at for ${table} id=${row.id}`);
+  }
+
+  const cols = TABLE_COLUMNS[table];
+  const out = { id: row.id, updated_at: Number(row.updated_at) };
+
+  for (const col of cols) {
+    let v = row[col];
+    if (v === undefined) v = null;
+    if (typeof v === 'boolean') v = v ? 1 : 0;
+    out[col] = v;
+  }
+  // created_at defaults to updated_at if the client didn't send one (INSERT fallback).
+  if (cols.includes('created_at') && (out.created_at === null || out.created_at === undefined)) {
+    out.created_at = out.updated_at;
+  }
+  return out;
 }
 
 /**
- * Upsert a record (Last-Write-Wins)
+ * Upsert a row with LWW semantics. Returns the change info from better-sqlite3.
+ * If you pass a custom `database` handle (e.g. inside a transaction), the
+ * statement is prepared on that handle — handy for transactional PR computation.
  */
-function upsertRecord(record) {
-  const stmt = db.prepare(`
-    INSERT INTO records (id, date, workout_id, exercise_id, set_num, weight, reps, timestamp, updated_at)
-    VALUES (@id, @date, @workout_id, @exercise_id, @set_num, @weight, @reps, @timestamp, @updated_at)
-    ON CONFLICT(id) DO UPDATE SET
-      date = @date,
-      workout_id = @workout_id,
-      exercise_id = @exercise_id,
-      set_num = @set_num,
+function upsertRow(table, row, database = db) {
+  if (!TABLE_COLUMNS[table]) throw new Error(`Unknown table: ${table}`);
+  const normalized = normalizeRow(table, row);
+  const stmt = getUpsertStmt(table, database);
+  return stmt.run(normalized);
+}
+
+/**
+ * Return all rows in `table` with updated_at > since. Booleans re-cast to real bools.
+ */
+function getChangesSince(table, since) {
+  if (!TABLE_COLUMNS[table]) throw new Error(`Unknown table: ${table}`);
+  const rows = db.prepare(`SELECT * FROM ${table} WHERE updated_at > ?`).all(Number(since) || 0);
+  return rows;
+}
+
+// -------------------- PR computation --------------------
+
+/**
+ * Epley 1RM estimate, capped at 10 reps (above that the formula is noise).
+ * Returns null if inputs are unusable.
+ */
+function estimate1RM(weight, reps) {
+  if (weight === null || weight === undefined) return null;
+  if (reps === null || reps === undefined) return null;
+  if (reps <= 0) return null;
+  if (weight <= 0) return null;
+  const cappedReps = Math.min(reps, 10);
+  if (cappedReps === 1) return weight;
+  return weight * (1 + cappedReps / 30);
+}
+
+/**
+ * Recompute PRs after a session_sets write. Runs inside the supplied transaction
+ * (`txDb` — the same better-sqlite3 handle used for the session_sets upsert).
+ *
+ * Rules:
+ *  - Warmup sets never trigger PRs.
+ *  - Deleted (is_deleted=1) sets don't set PRs.
+ *  - Rep-count PRs and weight PRs only consider sets with meaningful values (>0).
+ *  - A PR is "beaten" if the new value is strictly greater than the existing one.
+ *  - When a PR is beaten, upsert exercise_prs (new row uses a deterministic id:
+ *    `pr_${exercise_id}_${pr_type}`) and flip is_pr=1 on the winning session_set row.
+ *  - `exercise_prs.updated_at` always advances so the change feed picks it up.
+ *
+ * Returns { setPRs: ['weight', 'reps', …] } listing which PR types this row claimed.
+ */
+function recomputePRsForSessionSet(row, txDb) {
+  if (!row) return { setPRs: [] };
+
+  const weight = row.actual_weight;
+  const reps = row.actual_reps;
+  if (weight === null || weight === undefined) return { setPRs: [] };
+  if (reps === null || reps === undefined) return { setPRs: [] };
+
+  const volume = (weight > 0 && reps > 0) ? weight * reps : null;
+  const oneRm = estimate1RM(weight, reps);
+
+  const candidates = [];
+  if (weight > 0) candidates.push({ type: 'weight', value: weight });
+  if (reps > 0)   candidates.push({ type: 'reps', value: reps });
+  if (volume !== null && volume > 0) candidates.push({ type: 'volume', value: volume });
+  if (oneRm !== null && oneRm > 0)   candidates.push({ type: '1rm_est', value: oneRm });
+
+  if (candidates.length === 0) return { setPRs: [] };
+
+  const getPR = txDb.prepare(
+    'SELECT value FROM exercise_prs WHERE exercise_id = ? AND pr_type = ?'
+  );
+  const upsertPR = txDb.prepare(`
+    INSERT INTO exercise_prs
+      (id, exercise_id, pr_type, value, weight, reps, session_id, achieved_at, created_at, updated_at)
+    VALUES
+      (@id, @exercise_id, @pr_type, @value, @weight, @reps, @session_id, @achieved_at, @created_at, @updated_at)
+    ON CONFLICT(exercise_id, pr_type) DO UPDATE SET
+      value = @value,
       weight = @weight,
       reps = @reps,
-      timestamp = @timestamp,
+      session_id = @session_id,
+      achieved_at = @achieved_at,
       updated_at = @updated_at
-    WHERE @updated_at > records.updated_at
   `);
-  return stmt.run({
-    id: record.id,
-    date: record.date,
-    workout_id: record.workoutId,
-    exercise_id: record.exerciseId,
-    set_num: record.set,
-    weight: record.weight,
-    reps: record.reps,
-    timestamp: record.timestamp,
-    updated_at: record.updatedAt
+
+  const setPRs = [];
+  const now = Date.now();
+
+  for (const c of candidates) {
+    const existing = getPR.get(row.exercise_id, c.type);
+    if (existing && existing.value >= c.value) continue;
+
+    upsertPR.run({
+      id: `pr_${row.exercise_id}_${c.type}`,
+      exercise_id: row.exercise_id,
+      pr_type: c.type,
+      value: c.value,
+      weight: weight,
+      reps: reps,
+      session_id: row.session_id,
+      achieved_at: row.logged_at,
+      created_at: now,
+      updated_at: now
+    });
+    setPRs.push(c.type);
+  }
+
+  if (setPRs.length > 0) {
+    // Flip is_pr on the winning row. Bump updated_at so clients re-pull.
+    txDb.prepare(`
+      UPDATE session_sets SET is_pr = 1, updated_at = ? WHERE id = ?
+    `).run(now, row.id);
+  }
+
+  return { setPRs };
+}
+
+/**
+ * Upsert a session_sets row AND recompute PRs in the same transaction.
+ * Returns { applied, setPRs }.
+ */
+function upsertSessionSetWithPRs(row) {
+  const tx = db.transaction((r) => {
+    const info = upsertRow('session_sets', r, db);
+    // If the LWW guard rejected the write, don't touch PRs.
+    if (info.changes === 0) {
+      return { applied: false, setPRs: [] };
+    }
+    // Re-read the row to compute PRs off the authoritative stored values.
+    const stored = db.prepare('SELECT * FROM session_sets WHERE id = ?').get(r.id);
+    const { setPRs } = recomputePRsForSessionSet(stored, db);
+    return { applied: true, setPRs };
   });
+  return tx(row);
 }
+
+// -------------------- sync helpers --------------------
 
 /**
- * Get all exercises updated since a given timestamp
+ * Dependency-safe write order — parents before children so foreign-key-like
+ * references (even without FK enforcement) always resolve.
  */
-function getExercisesSince(timestamp) {
-  const stmt = db.prepare('SELECT * FROM exercises WHERE updated_at > ?');
-  const rows = stmt.all(timestamp);
-  return rows.map(row => ({
-    id: row.id,
-    name: row.name,
-    updatedAt: row.updated_at,
-    isDeleted: row.is_deleted === 1
-  }));
-}
-
-/**
- * Get all workouts updated since a given timestamp
- */
-function getWorkoutsSince(timestamp) {
-  const stmt = db.prepare('SELECT * FROM workouts WHERE updated_at > ?');
-  const rows = stmt.all(timestamp);
-  return rows.map(row => ({
-    id: row.id,
-    name: row.name,
-    exercises: JSON.parse(row.exercises),
-    updatedAt: row.updated_at
-  }));
-}
-
-/**
- * Get all records updated since a given timestamp
- */
-function getRecordsSince(timestamp) {
-  const stmt = db.prepare('SELECT * FROM records WHERE updated_at > ?');
-  const rows = stmt.all(timestamp);
-  return rows.map(row => ({
-    id: row.id,
-    date: row.date,
-    workoutId: row.workout_id,
-    exerciseId: row.exercise_id,
-    set: row.set_num,
-    weight: row.weight,
-    reps: row.reps,
-    timestamp: row.timestamp,
-    updatedAt: row.updated_at
-  }));
-}
-
-/**
- * Apply client changes and return server changes
- */
-function sync(lastSync, changes) {
-  const { exercises = [], workouts = [], records = [] } = changes;
-
-  // Apply client changes (LWW)
-  for (const exercise of exercises) {
-    upsertExercise(exercise);
-  }
-  for (const workout of workouts) {
-    upsertWorkout(workout);
-  }
-  for (const record of records) {
-    upsertRecord(record);
-  }
-
-  // Get server changes since lastSync
-  const serverChanges = {
-    exercises: getExercisesSince(lastSync),
-    workouts: getWorkoutsSince(lastSync),
-    records: getRecordsSince(lastSync)
-  };
-
-  // Use server timestamp to avoid clock skew
-  const syncTimestamp = Date.now();
-
-  return { serverChanges, syncTimestamp };
-}
+const WRITE_ORDER = [
+  'exercises',
+  'workouts',
+  'workout_blocks',
+  'block_exercises',
+  'block_exercise_sets',
+  'sessions',
+  'session_sets',
+  'exercise_prs'
+];
 
 module.exports = {
-  sync,
-  upsertExercise,
-  upsertWorkout,
-  upsertRecord,
-  getExercisesSince,
-  getWorkoutsSince,
-  getRecordsSince
+  db,
+  TABLE_COLUMNS,
+  SYNC_TABLES,
+  WRITE_ORDER,
+  CURRENT_SCHEMA_VERSION,
+  runMigrations,
+  upsertRow,
+  getChangesSince,
+  recomputePRsForSessionSet,
+  upsertSessionSetWithPRs,
+  estimate1RM
 };
