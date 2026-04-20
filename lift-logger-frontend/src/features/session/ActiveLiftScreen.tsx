@@ -189,7 +189,11 @@ function computeDoneInBE(
   entry: ReturnType<typeof targetAt> extends infer T ? T extends null ? never : T : never,
   _loggedCount: number,
 ): number {
-  // Sets already done in this block_exercise (within current round).
-  // For Phase 1 UI, a simple approximation: done count = setNumber - 1.
-  return (entry.cursor.setNumber ?? 1) - 1
+  // Sets already done in this block_exercise across all rounds up to and
+  // including this one. For round-major execution, = (round - 1) * sets_per_round
+  // + (set - 1). Reduces to (set - 1) for single-round blocks.
+  const setsPerRound = entry.blockExercise.sets.length
+  const roundIndex = (entry.cursor.roundNumber ?? 1) - 1
+  const setIndex = (entry.cursor.setNumber ?? 1) - 1
+  return roundIndex * setsPerRound + setIndex
 }
