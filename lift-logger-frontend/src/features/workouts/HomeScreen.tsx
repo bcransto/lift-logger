@@ -41,7 +41,7 @@ export function HomeScreen() {
   // performed", not "never touched".
   const sessionedWorkoutIds = useLiveQuery(async () => {
     const rows = await db.sessions.where('status').equals('completed').toArray()
-    return new Set(rows.map((s) => s.workout_id).filter((id): id is string => !!id))
+    return new Set(rows.map((s) => s.workout_id).filter((id) => id !== null) as string[])
   }, [])
 
   const chips = useMemo(() => {
