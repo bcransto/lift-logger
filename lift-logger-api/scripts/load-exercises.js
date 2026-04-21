@@ -26,7 +26,7 @@ const now = Date.now();
 const exercises = lines.map((name, i) => ({
   id: `ex_csv_${i + 1}`,
   name: name.trim().replace(/^"(.*)"$/, '$1'),
-  is_deleted: 0,
+  created_at: now,
   updated_at: now
 }));
 

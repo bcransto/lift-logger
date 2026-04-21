@@ -44,13 +44,6 @@ export function timeShort(ts: number = Date.now()): string {
   return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
 }
 
-export function formatWeight(w: number | null | undefined, unit = 'lb'): string {
-  if (w === null || w === undefined) return '—'
-  // Drop trailing .0 if integer; keep up to 1 decimal otherwise.
-  const s = Number.isInteger(w) ? w.toString() : w.toFixed(1).replace(/\.0$/, '')
-  return `${s} ${unit}`
-}
-
 export function parseJsonArray<T = string>(s: string | null | undefined): T[] {
   if (!s) return []
   try {

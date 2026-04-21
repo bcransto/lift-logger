@@ -9,7 +9,7 @@ import { SetCard } from './SetCard'
 import { SavePreferencePrompt } from './SavePreferencePrompt'
 import { mmss } from '../../shared/utils/format'
 import { cursorKey } from './sessionEngine'
-import type { SessionSetRow, SnapshotBlock, WorkoutSnapshot } from '../../types/schema'
+import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
 import styles from './TransitionScreen.module.css'
 
 export function TransitionScreen() {
@@ -223,6 +223,3 @@ function renderCueLine(line: string): React.ReactNode[] {
     return <span key={i}>{p}</span>
   })
 }
-
-// Silence unused var warning for SnapshotBlock (exported type used only at compile time elsewhere).
-export type { SnapshotBlock as _KeepBlockTypeImported }

@@ -283,8 +283,6 @@ function estimate1RM(weight, reps) {
  * (`txDb` — the same better-sqlite3 handle used for the session_sets upsert).
  *
  * Rules:
- *  - Warmup sets never trigger PRs.
- *  - Deleted (is_deleted=1) sets don't set PRs.
  *  - Rep-count PRs and weight PRs only consider sets with meaningful values (>0).
  *  - A PR is "beaten" if the new value is strictly greater than the existing one.
  *  - When a PR is beaten, upsert exercise_prs (new row uses a deterministic id:

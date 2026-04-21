@@ -313,6 +313,25 @@ describe('sessionEngine — firstCursorOfBlock (fixed to not hardcode position=1
     expect(isNewBlock(s, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 3 }))
       .toBe(false)
   })
+
+  it('isNewBlock is true for the first cursor of every block in a multi-block snapshot', () => {
+    const s = multiBlock() // block 1 (single, 2 sets), block 2 (circuit, 2 rounds × 2 BEs)
+    // First cursor of block 1
+    expect(isNewBlock(s, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }))
+      .toBe(true)
+    // First cursor of block 2 (round-major → round 1, BE 1)
+    expect(isNewBlock(s, { blockPosition: 2, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }))
+      .toBe(true)
+    // Mid-block 1 (last set of single) — not new
+    expect(isNewBlock(s, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 2 }))
+      .toBe(false)
+    // Block 2, round 2 start — same block, different round — not new
+    expect(isNewBlock(s, { blockPosition: 2, blockExercisePosition: 1, roundNumber: 2, setNumber: 1 }))
+      .toBe(false)
+    // Block 2, BE 2 — not the first BE — not new
+    expect(isNewBlock(s, { blockPosition: 2, blockExercisePosition: 2, roundNumber: 1, setNumber: 1 }))
+      .toBe(false)
+  })
 })
 
 describe('sessionEngine — firstUnloggedCursorInBlock', () => {

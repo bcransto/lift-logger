@@ -12,6 +12,8 @@ import { db } from '../db/db'
 import { buildWorkoutSnapshot } from '../db/queries'
 import {
   advance,
+  cursorKey,
+  cursorKeyFromRow,
   cursorsEqual,
   firstCursor,
   firstUnloggedCursorInBlock,
@@ -150,15 +152,10 @@ function cursorFromLogged(
   logged: SessionSetRow[],
   skippedBlockIds: ReadonlySet<string>,
 ): Cursor | null {
-  const doneKeys = new Set(
-    logged.map(
-      (r) => `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`,
-    ),
-  )
+  const doneKeys = new Set(logged.map(cursorKeyFromRow))
   for (const entry of iterateSets(snapshot)) {
     if (skippedBlockIds.has(entry.block.id)) continue
-    const key = `${entry.cursor.blockPosition}.${entry.cursor.blockExercisePosition}.${entry.cursor.roundNumber}.${entry.cursor.setNumber}`
-    if (!doneKeys.has(key)) return entry.cursor
+    if (!doneKeys.has(cursorKey(entry.cursor))) return entry.cursor
   }
   return null
 }
@@ -563,9 +560,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     nextSkipped.delete(blockId)
     // Land on the first unlogged set of this block (reviewer catch #5 from the plan).
     const logged = await db.session_sets.where('session_id').equals(sessionId).toArray()
-    const loggedKeys = new Set(
-      logged.map((r) => `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`),
-    )
+    const loggedKeys = new Set(logged.map(cursorKeyFromRow))
     const blockPosition = snapshot.blocks.find((b) => b.id === blockId)?.position
     const target = blockPosition != null
       ? firstUnloggedCursorInBlock(snapshot, blockPosition, loggedKeys)

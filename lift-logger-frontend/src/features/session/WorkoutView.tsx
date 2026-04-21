@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
+import { cursorKey, cursorKeyFromRow } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
 import styles from './WorkoutView.module.css'
 
@@ -37,9 +38,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
 
   if (!snapshot) return null
 
-  const loggedKeys = new Set(
-    (logged ?? []).map((r) => `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`),
-  )
+  const loggedKeys = new Set((logged ?? []).map(cursorKeyFromRow))
 
   const blockStatus = (blockPos: number, blockId: string): 'done' | 'current' | 'skipped' | 'pending' => {
     if (skippedBlockIds.has(blockId)) return 'skipped'
@@ -51,7 +50,12 @@ export function WorkoutViewOverlay({ onClose }: Props) {
       for (const be of b.exercises) {
         for (const t of be.sets) {
           totalSets++
-          const key = `${b.position}.${be.position}.${r}.${t.set_number}`
+          const key = cursorKey({
+            blockPosition: b.position,
+            blockExercisePosition: be.position,
+            roundNumber: r,
+            setNumber: t.set_number,
+          })
           if (loggedKeys.has(key)) doneSets++
         }
       }
@@ -69,7 +73,12 @@ export function WorkoutViewOverlay({ onClose }: Props) {
       for (let r = 1; r <= rounds; r++) {
         for (const be of b.exercises) {
           for (const t of be.sets) {
-            const key = `${b.position}.${be.position}.${r}.${t.set_number}`
+            const key = cursorKey({
+            blockPosition: b.position,
+            blockExercisePosition: be.position,
+            roundNumber: r,
+            setNumber: t.set_number,
+          })
             if (!loggedKeys.has(key)) unlogged++
           }
         }

@@ -56,11 +56,6 @@ upsertRow('exercises', { id: 'ex_a', name: 'Newest', updated_at: 200 });
 ok(db.prepare('SELECT name FROM exercises WHERE id=?').get('ex_a').name === 'Newest',
    'LWW: newer write accepted');
 
-// Boolean coercion
-upsertRow('exercises', { id: 'ex_b', name: 'deleted', is_deleted: true, updated_at: 10 });
-ok(db.prepare('SELECT is_deleted FROM exercises WHERE id=?').get('ex_b').is_deleted === 1,
-   'boolean coerced to 1');
-
 // --- 4. getChangesSince ---
 ok(getChangesSince('exercises', 0).length >= 2, 'getChangesSince(0) returns all');
 const since150 = getChangesSince('exercises', 150);
@@ -98,19 +93,6 @@ const byType2 = Object.fromEntries(
 );
 ok(byType2.weight === 120, `weight PR advanced to 120`);
 ok(byType2.reps === 5, `reps PR unchanged at 5`);
-
-// Warmup set shouldn't set PRs
-upsertSessionSetWithPRs({
-  id: 'ss_warm', session_id: 'sess_1', exercise_id: 'ex_a', set_number: 3,
-  weight: 500, reps: 1, performed_at: now + 2000, updated_at: now + 2000,
-  is_warmup: true
-});
-const byType3 = Object.fromEntries(
-  db.prepare('SELECT pr_type, value FROM exercise_prs').all().map(r => [r.pr_type, r.value])
-);
-ok(byType3.weight === 120, `warmup did NOT set weight PR`);
-ok(db.prepare('SELECT is_pr FROM session_sets WHERE id=?').get('ss_warm').is_pr === 0,
-   'warmup row is_pr stays 0');
 
 // Epley cap at 10 reps
 ok(estimate1RM(100, 12) === estimate1RM(100, 10),

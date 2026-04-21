@@ -93,6 +93,16 @@ export function cursorKey(c: Cursor): string {
   return `${c.blockPosition}.${c.blockExercisePosition}.${c.roundNumber}.${c.setNumber}`
 }
 
+/** Same key format as cursorKey, built from a DB row's snake_case fields. */
+export function cursorKeyFromRow(r: {
+  block_position: number
+  block_exercise_position: number
+  round_number: number
+  set_number: number
+}): string {
+  return `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`
+}
+
 export function parseSetKey(setKey: string): { blockExercisePosition: number; roundNumber: number; setNumber: number } | null {
   const parts = setKey.split('.').map((n) => Number.parseInt(n, 10))
   if (parts.length !== 3 || parts.some(Number.isNaN)) return null

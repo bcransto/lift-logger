@@ -20,7 +20,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
-import { cursorKey, isLastSetOfBlock, parseSetKey } from './sessionEngine'
+import { cursorKey, cursorKeyFromRow, isLastSetOfBlock, isNewBlock, parseSetKey, targetAt } from './sessionEngine'
 import { TimerDock } from './TimerDock'
 import { WorkSetCard } from './WorkSetCard'
 import { RestCard } from './RestCard'
@@ -30,7 +30,6 @@ import { WorkoutViewOverlay } from './WorkoutView'
 import type {
   Cursor,
   SessionSetRow,
-  SnapshotBlock,
   SnapshotBlockExercise,
   SnapshotSetTarget,
   WorkoutSnapshot,
@@ -105,16 +104,24 @@ export function BlockView() {
   }, [sessionId])
 
   // Cursor → URL on every subsequent cursor change (logSet, skip, return…).
+  // When cursor crosses into a new block (first set of a block other than the
+  // one in the URL), route through TransitionScreen so the user gets the
+  // "UP NEXT · REST · I'm Ready" ceremony between blocks.
   useEffect(() => {
-    if (!sessionId || !cursor || !mountSyncedRef.current) return
+    if (!sessionId || !cursor || !mountSyncedRef.current || !snapshot) return
+    const currentBpInUrl = Number.parseInt(bpStr ?? '1', 10)
+    if (cursor.blockPosition !== currentBpInUrl && isNewBlock(snapshot, cursor)) {
+      navigate(`/session/${sessionId}/transition/${cursor.blockPosition}`, { replace: true })
+      return
+    }
     const expected = `/session/${sessionId}/active/${cursor.blockPosition}/${cursor.blockExercisePosition}.${cursor.roundNumber}.${cursor.setNumber}`
     if (window.location.pathname !== expected) navigate(expected, { replace: true })
-  }, [cursor, sessionId, navigate])
+  }, [cursor, sessionId, navigate, snapshot, bpStr])
 
   // Work-timer lifecycle: start when cursor lands on a timed-work card, clear on others.
   useEffect(() => {
     if (!cursor || !snapshot || !session) return
-    const entry = findEntry(snapshot, cursor)
+    const entry = targetAt(snapshot, cursor)
     if (!entry) return
     const isTimed = entry.target.target_duration_sec != null
     const alreadyStarted = session.work_timer_started_at != null
@@ -148,12 +155,7 @@ export function BlockView() {
 
   const cursorK = cursorKey(cursor)
   const rounds = block.kind === 'single' ? 1 : block.rounds
-  const loggedByKey = new Map(
-    (logged ?? []).map((r) => [
-      `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`,
-      r,
-    ]),
-  )
+  const loggedByKey = new Map((logged ?? []).map((r) => [cursorKeyFromRow(r), r]))
 
   // Assemble round-major cards across ALL block_exercises in this block.
   // Between consecutive work cards: rest card or inline Next button.
@@ -169,9 +171,7 @@ export function BlockView() {
   const latestInBlock = (logged ?? [])
     .filter((r) => r.block_position === block.position)
     .sort((a, b) => b.logged_at - a.logged_at)[0]
-  const latestKey = latestInBlock
-    ? `${latestInBlock.block_position}.${latestInBlock.block_exercise_position}.${latestInBlock.round_number}.${latestInBlock.set_number}`
-    : null
+  const latestKey = latestInBlock ? cursorKeyFromRow(latestInBlock) : null
 
   for (let r = 1; r <= rounds; r++) {
     for (let beIdx = 0; beIdx < bes.length; beIdx++) {
@@ -256,7 +256,7 @@ export function BlockView() {
     return be?.sets.find((s) => s.set_number === latestInBlock.set_number)?.rest_after_sec ?? null
   })()
 
-  const focusedEntry = findEntry(snapshot, cursor)
+  const focusedEntry = targetAt(snapshot, cursor)
   const focusedIsTimed = focusedEntry?.target.target_duration_sec != null
   const elapsedSinceStart = session.started_at
     ? mmss((Date.now() - session.started_at) / 1000)
@@ -395,14 +395,6 @@ export function BlockView() {
   )
 }
 
-function findEntry(snapshot: WorkoutSnapshot, cursor: Cursor) {
-  const b = snapshot.blocks.find((x) => x.position === cursor.blockPosition)
-  const be = b?.exercises.find((e) => e.position === cursor.blockExercisePosition)
-  const target = be?.sets.find((s) => s.set_number === cursor.setNumber)
-  if (!b || !be || !target) return null
-  return { block: b, blockExercise: be, target }
-}
-
 function cardNumber(snapshot: WorkoutSnapshot, cursor: Cursor) {
   // "Lift" = which work card (1-indexed) the user is on, across the whole workout.
   let idx = 0
@@ -435,11 +427,7 @@ function countUnloggedInNonSkippedBlocks(
   logged: SessionSetRow[],
   skippedBlockIds: ReadonlySet<string>,
 ): number {
-  const doneKeys = new Set(
-    logged.map(
-      (r) => `${r.block_position}.${r.block_exercise_position}.${r.round_number}.${r.set_number}`,
-    ),
-  )
+  const doneKeys = new Set(logged.map(cursorKeyFromRow))
   let unlogged = 0
   for (const b of snapshot.blocks) {
     if (skippedBlockIds.has(b.id)) continue
@@ -447,7 +435,12 @@ function countUnloggedInNonSkippedBlocks(
     for (let r = 1; r <= rounds; r++) {
       for (const be of b.exercises) {
         for (const t of be.sets) {
-          const key = `${b.position}.${be.position}.${r}.${t.set_number}`
+          const key = cursorKey({
+            blockPosition: b.position,
+            blockExercisePosition: be.position,
+            roundNumber: r,
+            setNumber: t.set_number,
+          })
           if (!doneKeys.has(key)) unlogged++
         }
       }
@@ -456,6 +449,3 @@ function countUnloggedInNonSkippedBlocks(
   // exclude the currently-focused set from the "remaining" count
   return Math.max(0, unlogged - 1)
 }
-
-// Silence unused — SnapshotBlock type is referenced via SnapshotBlockExercise import.
-export type { SnapshotBlock as _KeepBlockTypeImported }
