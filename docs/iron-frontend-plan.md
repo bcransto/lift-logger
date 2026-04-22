@@ -320,6 +320,7 @@ Tab bar sits at the bottom of the app shell. It hides on session screens (Transi
 - Action row: `+ Add Set` / `× Delete Ex.` (Phase 1 allows delete only if block has >1 exercise or workout has >1 block; otherwise hide)
 - **Swap exercise row** — Phase 2. Phase 1: hide.
 - Primary `I'm Ready →` button. Flushes pending edits and navigates to `/session/.../active/...`.
+- **v3: round tabs** for superset/circuit blocks with `rounds > 1`. Horizontal scrollable strip (`R1 · R2 · R3 · …`) above the set grid. Active tab highlighted; rounds that have explicit override rows show an amber `•` dot after the label. Tapping a tab filters the set grid via `setsForRound(be, effectiveRound)` and routes all `applyEdit` calls with `roundNumber: effectiveRound`. Single blocks never render the tabs. Block-level `+ Add Round (clones R{N})` and `− Remove Last Round` buttons sit below the grid — they replace the per-exercise `+ Add Set` for supersets (sets-per-round is a template-time concern; mid-workout you add *rounds*, not sets).
 
 ### Active Lift (Phase 1: View 1 only)
 
@@ -370,6 +371,10 @@ function targetAt(snapshot: WorkoutSnapshot, cursor: Cursor): SetTarget | null;
 Pure functions let us unit-test the engine without DOM/Dexie, and make `sessionStore.advanceCursor` a one-liner.
 
 **Superset ordering** (the tricky case): for a block with `kind='superset'` and `rounds=3`, execution order is round-major: `(be1 sets), (be2 sets), (be1 sets), (be2 sets), (be1 sets), (be2 sets)`. Straight `single` blocks are just `(sets)`. Circuit behaves like superset with potentially time-based sets. HIIT is modeled as `circuit` with `target_duration_sec` per set.
+
+**Per-round targets (v3)**: each `SnapshotSetTarget` carries an optional `round_number`. [`buildWorkoutSnapshot`](../lift-logger-frontend/src/db/queries.ts) round-expands the raw `block_exercise_sets` rows at session start, merging anchor + per-round overrides into one entry per `(round, set_number)`. The engine then filters `be.sets` by `round_number === r` inside its round loop. `setsForRound(be, r)` exported from [`sessionEngine.ts`](../lift-logger-frontend/src/features/session/sessionEngine.ts) provides implicit round-1 fallback so legacy flat snapshots (pre-v3 sessions, authored-without-overrides templates) still walk every round. Consumers that iterate `be.sets` directly (BlockView legacy path, WorkoutView counts, SetView/SetPatternRenderer lookups) should use `setsForRound` rather than the raw array to stay round-aware.
+
+**Structural edits** carry `roundNumber` on every variant (`editSetTarget`, `addSet`, `deleteSet`). `deleteSet` renumbering is scoped per round so other rounds' set_numbers stay stable. The store also has two block-level edits — `addRound` (clones the last round's targets into `rounds+1`, writes explicit override rows across every BE) and `removeLastRound` (decrements `block.rounds`, preserves orphan override rows for a possible regrow). On save preference `template`, `propagateEditsToTemplate` writes these through to the Dexie compound index `[block_exercise_id+round_number+set_number]`.
 
 **Unplanned mid-session additions** are Phase 2. For Phase 1, the UI doesn't expose "add exercise mid-workout"; only add/delete *sets* within existing block_exercises.
 

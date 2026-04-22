@@ -92,10 +92,17 @@ CREATE INDEX IF NOT EXISTS idx_block_exercises_block ON block_exercises(block_id
 CREATE INDEX IF NOT EXISTS idx_block_exercises_exercise ON block_exercises(exercise_id);
 CREATE INDEX IF NOT EXISTS idx_block_exercises_updated ON block_exercises(updated_at);
 
+-- v3: round_number added so superset/circuit blocks can carry per-round
+-- overrides. Round 1 rows are the mandatory anchor per (block_exercise_id,
+-- set_number); rows with round_number > 1 are PARTIAL overrides — null
+-- columns inherit from the anchor at snapshot-build time. Single blocks
+-- always have round_number = 1. Orphan rows (round_number > block.rounds)
+-- are preserved but filtered out of the executed snapshot.
 CREATE TABLE IF NOT EXISTS block_exercise_sets (
   id                    TEXT PRIMARY KEY,
   block_exercise_id     TEXT NOT NULL REFERENCES block_exercises(id) ON DELETE CASCADE,
   set_number            INTEGER NOT NULL,
+  round_number          INTEGER NOT NULL DEFAULT 1,  -- v3: per-round targets
   target_weight         REAL,
   target_pct_1rm        REAL,                       -- 0.0–1.2
   target_reps           INTEGER,
@@ -107,7 +114,7 @@ CREATE TABLE IF NOT EXISTS block_exercise_sets (
   notes                 TEXT,
   created_at            INTEGER NOT NULL,
   updated_at            INTEGER NOT NULL,
-  UNIQUE(block_exercise_id, set_number),
+  UNIQUE(block_exercise_id, round_number, set_number),
   CHECK (NOT (target_weight IS NOT NULL AND target_pct_1rm IS NOT NULL)),
   CHECK (
     target_weight IS NOT NULL
@@ -116,7 +123,7 @@ CREATE TABLE IF NOT EXISTS block_exercise_sets (
     OR target_reps IS NOT NULL
   )
 );
-CREATE INDEX IF NOT EXISTS idx_sets_block_exercise ON block_exercise_sets(block_exercise_id, set_number);
+CREATE INDEX IF NOT EXISTS idx_sets_block_exercise ON block_exercise_sets(block_exercise_id, round_number, set_number);
 CREATE INDEX IF NOT EXISTS idx_sets_updated ON block_exercise_sets(updated_at);
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -244,7 +251,7 @@ All existing tools (`list_exercises`, `list_workouts`, `get_workout_history`, `g
 - `get_volume_summary({ startDate, endDate, groupBy })` — aggregates `session_sets.actual_weight * actual_reps`
 - `query_session_sets(...)` — flexible filter, replaces `query_records`
 
-**Zod schemas** for the nested `create_workout` input: `Block = {kind, position, rounds?, rest_after_sec?, setup_cue?, exercises: BlockExercise[]}`, `BlockExercise = {exercise_id, position, alt_exercise_ids?, sets: SetTarget[]}`, `SetTarget = {set_number, target_weight?, target_pct_1rm?, target_reps?, target_reps_each?, target_duration_sec?, target_rpe?, is_peak?, rest_after_sec?, notes?}` — with the same XOR/at-least-one-target invariants as the DB CHECK constraints.
+**Zod schemas** for the nested `create_workout` input: `Block = {kind, position, rounds?, rest_after_sec?, setup_cue?, exercises: BlockExercise[]}`, `BlockExercise = {exercise_id, position, alt_exercise_ids?, sets: SetTarget[]}`, `SetTarget = {set_number, round_number?, target_weight?, target_pct_1rm?, target_reps?, target_reps_each?, target_duration_sec?, target_rpe?, is_peak?, rest_after_sec?, notes?}` — with the same XOR/at-least-one-target invariants as the DB CHECK constraints. `round_number` defaults to 1 on the backend via `normalizeRow` so pre-v3 clients pushing without the field land cleanly on the anchor row.
 
 Shared DB access lives in [lift-logger-mcp/db.js](lift-logger-mcp/db.js) and gets rewritten to point at `data/iron.db`.
 
@@ -255,6 +262,18 @@ Shared DB access lives in [lift-logger-mcp/db.js](lift-logger-mcp/db.js) and get
 - Reads current version with `SELECT MAX(version) FROM schema_version`. If empty, treats as v0 and applies v1 (which is a no-op beyond the `CREATE TABLE IF NOT EXISTS` already run) then `INSERT INTO schema_version(version) VALUES (1)`.
 - Future changes (v2+) go in numbered migration functions — `migrations[2](db)` etc. Each runs in a transaction and bumps the version row.
 - Idempotent column adds use `PRAGMA table_info(table)` checks.
+- **v3 (per-round targets)** adds `round_number` to `block_exercise_sets` via table rebuild (SQLite can't ALTER a UNIQUE constraint in place). The migration takes a pre-v3 `VACUUM INTO` snapshot to a sibling file BEFORE entering the migration transaction, then rebuilds the table with the new UNIQUE `(block_exercise_id, round_number, set_number)`. The snapshot helper lives outside `runMigrations` in [lift-logger-api/db/migrations.js](lift-logger-api/db/migrations.js) so verifier scripts can pull it too. See `scripts/verify-migration-v3.js` for the standalone check.
+
+## Per-round targets (v3 semantics)
+
+Supersets and circuits can carry different weights / reps / rest per round. The model is "anchor + partial overrides":
+
+- Every `(block_exercise_id, set_number)` tuple has a **round-1 anchor** row — the defaults that apply to every round unless overridden.
+- Rows with `round_number > 1` are **partial overrides**: any non-null column wins over the anchor for that round; null columns inherit. To express "same shape as round 1 but heavier weight," set only `target_weight` on the override row and leave the rest null.
+- **Per-round rest emerges for free**: `block_exercise_sets.rest_after_sec` on the last-set row of a round is the between-round rest for *that* round. Falls back to `workout_blocks.rest_after_sec` when the override is null. No separate per-round rest field needed.
+- **Orphans are preserved**: if a user shrinks `block.rounds` from 5 to 3 after authoring round-4 and round-5 overrides, the override rows stay in the DB. The snapshot-builder filters them out; if `rounds` is raised again later, the overrides reappear.
+- **Snapshot-time resolution**: [`buildWorkoutSnapshot`](../lift-logger-frontend/src/db/queries.ts) in the frontend does the merge once at session start — engine consumers (`iterateSets`, `targetAt`, etc.) see fully-resolved `SnapshotSetTarget` entries with `round_number` populated and no inheritance logic to reason about. `sessionEngine.setsForRound(be, r)` also provides an implicit round-1 fallback so pre-v3 snapshot JSON and templates without per-round overrides behave identically to before.
+- MCP `upsertWorkoutTree` accepts `round_number` on any set, defaults to 1, and warns (doesn't reject) when `round_number > block.rounds` — matches the permissive-read policy above.
 
 ## File-by-file changes
 

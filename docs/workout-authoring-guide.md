@@ -25,11 +25,15 @@ Rest lives in two places:
 - The **last set of a block should be 0/null** unless you want rest before the next block begins.
 - For pyramids with progressive heavier loads, rest typically grows: 90, 120, 180, ... per set.
 
-### `workout_blocks.rest_after_sec` — between-rounds rest (superset/circuit)
+### `workout_blocks.rest_after_sec` — default between-rounds rest (superset/circuit)
 
-- Only applies at round boundaries (last station of round N → first station of round N+1).
+- Applies at round boundaries (last station of round N → first station of round N+1) **when the last-set row of the round doesn't specify its own `rest_after_sec`**.
 - For single-kind blocks (rounds always 1), put rest on the sets, not here.
 - If the block has `rounds: 1`, the UI does not use this field.
+
+### Per-round rest overrides (v3)
+
+If you want the between-round rest to vary — e.g. 60s after R1, 90s after R2 as fatigue builds — set `rest_after_sec` on the last-set row of a specific round (via a per-round override, see "Per-round targets" below). That value overrides `workout_blocks.rest_after_sec` for *that* round only; rounds without an explicit override still fall back to the block-level default.
 
 **Rule of thumb**: for a Tabata-style circuit with 20s work + 10s between stations + 30s between rounds, set `sets[].rest_after_sec = 10` on each set and `workout_blocks.rest_after_sec = 30` on the block.
 
@@ -99,6 +103,43 @@ Each set target has these knobs. Use whichever combination matches the exercise;
 }
 ```
 
+### Progressive superset — per-round targets (v3)
+
+Supersets and circuits can carry different weights / reps / rest per round. Each `(set_number)` gets a **round-1 anchor** with the defaults, plus optional **override rows** (`round_number > 1`) that carry only the fields that differ. Null columns on override rows inherit from the anchor.
+
+```json
+{
+  "kind": "superset",
+  "rounds": 3,
+  "rest_after_sec": 90,
+  "exercises": [
+    {
+      "exercise_id": "ex_leg_ext",
+      "sets": [
+        { "set_number": 1, "target_weight": 100, "target_reps": 12 },
+        { "set_number": 1, "round_number": 2, "target_weight": 110 },
+        { "set_number": 1, "round_number": 3, "target_weight": 120, "target_reps": 10 }
+      ]
+    },
+    {
+      "exercise_id": "ex_leg_curl",
+      "sets": [
+        { "set_number": 1, "target_weight": 70, "target_reps": 12 }
+      ]
+    }
+  ]
+}
+```
+
+Reads as: Leg Extensions R1 = 100×12, R2 = 110×12 (reps inherited), R3 = 120×10 (both overridden). Leg Curls runs 70×12 on every round (no overrides, inherits anchor entirely). Between-round rest is 90s everywhere (block default) — no per-round rest variation here.
+
+**Rules**:
+- Round 1 is a mandatory anchor per `(exercise, set_number)`. Without it, overrides have nothing to inherit from and the set won't execute.
+- Override rows are **partial**: only include the fields that change. Omitting a field = inherit from round 1. Setting it to `null` also = inherit.
+- You can vary `rest_after_sec` per round the same way — put it on the last-set row of a round to override the between-round rest for that round.
+- Keep `round_number ≤ block.rounds`. Rows beyond that are preserved in the DB but filtered out of execution (a safety net for shrink/regrow of rounds).
+- You never need to duplicate a row per round if nothing differs — the engine replicates round 1 for any round without explicit entries.
+
 ### Unilateral (Bulgarian split squat)
 
 ```json
@@ -134,11 +175,15 @@ Each set target has these knobs. Use whichever combination matches the exercise;
 - **Authoring `target_weight` AND `target_pct_1rm` together** — schema CHECK will reject. Pick one.
 - **Mixing rep-based and timed sets in the same block_exercise.** Supported technically but confusing to execute. Prefer separate blocks if the patterns differ.
 - **Using `kind: "standard"` or `"hiit"` directly.** Only `single`, `superset`, `circuit` exist. HIIT = circuit with timed sets.
+- **Authoring a round-2 override without a round-1 anchor** for the same `set_number`. The override row will exist but the executor has no anchor to inherit from, so the set won't appear in any round. Always write the anchor first.
+- **Setting `round_number` on single-block sets.** Single blocks always execute `rounds=1`. Any `round_number > 1` row on a single-block set is an unreachable orphan. Omit the field (it defaults to 1).
+- **Duplicating every round verbatim** when nothing differs. Wasteful and easy to drift — just write one anchor row at round 1 and let the engine replicate.
 
 ## Checking your work
 
 After `create_workout`, call `get_workout({ workoutId })` and verify:
 - All exercises you named are present (the tool validates `exercise_id`s at write time, but inspect visually).
-- Set numbering is 1..N contiguous per block_exercise.
+- Set numbering is 1..N contiguous per block_exercise **within each round**. Different rounds can have different counts; they don't need to match.
 - `is_peak` is exactly where you intended.
 - Rest values make sense: longest rest on the heaviest set of a pyramid, zero on the final set of non-final blocks, block-level rest only set for supersets/circuits with rounds > 1.
+- For per-round overrides: each `set_number` has a round-1 row; override rows (round > 1) carry only the fields that differ; `round_number` never exceeds `block.rounds` (or if it does, you did it deliberately as a preserved orphan).
