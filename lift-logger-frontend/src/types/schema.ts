@@ -174,11 +174,10 @@ export type ExercisePrRow = {
 
 export type SnapshotSetTarget = {
   set_number: number
-  // round_number (v3): required on every target in a built snapshot. The
-  // snapshot-builder emits one entry per (round_number, set_number) with
-  // overrides already merged against the round-1 anchor — consumers (engine,
-  // UI) never have to re-resolve inheritance.
-  round_number: number
+  // round_number (v3): optional to tolerate pre-v3 snapshot JSON that lacks
+  // the field. Consumers default to 1 via `?? 1`. Built snapshots from
+  // buildWorkoutSnapshot always populate it.
+  round_number?: number
   target_weight?: number | null
   target_pct_1rm?: number | null
   target_reps?: number | null
