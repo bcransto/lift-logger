@@ -8,11 +8,11 @@ import { RestTimerCard } from './RestTimerCard'
 import { SetCard } from './SetCard'
 import { SavePreferencePrompt } from './SavePreferencePrompt'
 import { mmss } from '../../shared/utils/format'
-import { cursorKey } from './sessionEngine'
+import { cursorKey, setsForRound } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
-import styles from './TransitionScreen.module.css'
+import styles from './BlockIntroScreen.module.css'
 
-export function TransitionScreen() {
+export function BlockIntroScreen() {
   const { sessionId, blockPosition: bpStr } = useParams<{ sessionId: string; blockPosition: string }>()
   const navigate = useNavigate()
 
@@ -42,6 +42,10 @@ export function TransitionScreen() {
     return () => window.clearInterval(id)
   }, [])
 
+  // Active round tab (superset/circuit only). Clamped to block.rounds so that
+  // a Remove Last Round action that trims below the active tab falls back.
+  const [activeRound, setActiveRound] = useState(1)
+
   if (!session || !snapshot) return <div className={styles.empty}>Loading…</div>
 
   const block = snapshot.blocks.find((b) => b.position === blockPosition)
@@ -54,6 +58,20 @@ export function TransitionScreen() {
 
   const elapsed = mmss((now - session.started_at) / 1000)
   const autoStartSec = block.rest_after_sec ?? (blockPosition === 1 ? 0 : 60)
+
+  const showRoundTabs = block.kind !== 'single' && block.rounds > 1
+  // Clamp active round to block.rounds. Guards against Remove-Last-Round
+  // taking rounds below the active tab — fall back to the new last round.
+  const effectiveRound = showRoundTabs ? Math.min(Math.max(activeRound, 1), block.rounds) : 1
+  // Which rounds have at least one explicit override row? Used to render the
+  // "•" indicator on tabs so the user knows which rounds differ from R1.
+  const overrideRounds = new Set<number>()
+  for (const be of block.exercises) {
+    for (const s of be.sets) {
+      const rn = s.round_number ?? 1
+      if (rn > 1) overrideRounds.add(rn)
+    }
+  }
 
   const onReady = () => {
     const c = cursor
@@ -91,7 +109,10 @@ export function TransitionScreen() {
       {block.setup_cue ? <StationSetup cue={block.setup_cue} /> : null}
 
       <div className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>SETS · TAP TO EDIT</span>
+        <span className={styles.sectionTitle}>
+          SETS · TAP TO EDIT
+          {showRoundTabs ? ` · R${effectiveRound}` : ''}
+        </span>
         {savePreference ? (
           <span className={`${styles.saveTag} ${styles[savePreference]}`}>
             {savePreference === 'template' ? 'template' : 'session'}
@@ -99,33 +120,62 @@ export function TransitionScreen() {
         ) : null}
       </div>
 
+      {showRoundTabs ? (
+        <div className={styles.roundTabs} role="tablist">
+          {Array.from({ length: block.rounds }, (_, i) => i + 1).map((r) => {
+            const isActive = r === effectiveRound
+            const hasOverride = overrideRounds.has(r)
+            return (
+              <button
+                key={r}
+                role="tab"
+                aria-selected={isActive}
+                className={`${styles.roundTab} ${isActive ? styles.roundTabActive : ''}`}
+                onClick={() => setActiveRound(r)}
+              >
+                R{r}
+                {hasOverride ? <span className={styles.roundTabDot} aria-label="has overrides" /> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
       <SavePreferencePrompt />
 
       <div className={styles.blocks}>
-        {block.exercises.map((be) => (
+        {block.exercises.map((be) => {
+          // Round-expanded snapshots have per-round entries; supersets that
+          // don't specify per-round overrides fall back to round-1 anchors
+          // via setsForRound. For single blocks this is effectively round-1.
+          const roundSets = setsForRound(be, effectiveRound)
+            .slice()
+            .sort((a, b) => a.set_number - b.set_number)
+          return (
           <div key={be.id} className={styles.exGroup}>
             {block.exercises.length > 1 ? (
               <div className={styles.exLabel}>{be.name}</div>
             ) : null}
             <div className={styles.setGrid}>
-              {be.sets.map((s) => {
+              {roundSets.map((s) => {
                 const loggedKey = cursorKey({
                   blockPosition,
                   blockExercisePosition: be.position,
-                  roundNumber: 1,
+                  roundNumber: effectiveRound,
                   setNumber: s.set_number,
                 })
                 const match = (logged ?? []).find(
                   (r) =>
                     r.block_position === blockPosition &&
                     r.block_exercise_position === be.position &&
+                    r.round_number === effectiveRound &&
                     r.set_number === s.set_number,
                 )
                 const cur = cursor ?? null
                 const isCurrent =
                   cur?.blockPosition === blockPosition &&
                   cur?.blockExercisePosition === be.position &&
-                  cur?.roundNumber === 1 &&
+                  cur?.roundNumber === effectiveRound &&
                   cur?.setNumber === s.set_number
                 const state = match ? 'done' : isCurrent ? 'current' : s.is_peak ? 'peak' : 'pending'
                 return (
@@ -139,6 +189,7 @@ export function TransitionScreen() {
                         kind: 'editSetTarget',
                         blockPosition,
                         blockExercisePosition: be.position,
+                        roundNumber: effectiveRound,
                         setNumber: s.set_number,
                         patch,
                       })
@@ -147,43 +198,75 @@ export function TransitionScreen() {
                 )
               })}
             </div>
-            <div className={styles.exActions}>
-              <button
-                className={styles.addBtn}
-                onClick={() =>
-                  applyEdit({
-                    kind: 'addSet',
-                    blockPosition,
-                    blockExercisePosition: be.position,
-                    target: {
-                      set_number: (be.sets[be.sets.length - 1]?.set_number ?? 0) + 1,
-                      target_weight: be.sets[be.sets.length - 1]?.target_weight ?? null,
-                      target_reps: be.sets[be.sets.length - 1]?.target_reps ?? null,
-                    },
-                  })
-                }
-              >
-                + Add Set
-              </button>
-              {be.sets.length > 1 ? (
+            {block.kind === 'single' ? (
+              <div className={styles.exActions}>
                 <button
-                  className={styles.deleteBtn}
+                  className={styles.addBtn}
                   onClick={() =>
                     applyEdit({
-                      kind: 'deleteSet',
+                      kind: 'addSet',
                       blockPosition,
                       blockExercisePosition: be.position,
-                      setNumber: be.sets[be.sets.length - 1]!.set_number,
+                      target: {
+                        set_number: (roundSets[roundSets.length - 1]?.set_number ?? 0) + 1,
+                        round_number: 1,
+                        target_weight: roundSets[roundSets.length - 1]?.target_weight ?? null,
+                        target_reps: roundSets[roundSets.length - 1]?.target_reps ?? null,
+                      },
                     })
                   }
                 >
-                  − Remove Last
+                  + Add Set
                 </button>
-              ) : null}
-            </div>
+                {roundSets.length > 1 ? (
+                  <button
+                    className={styles.deleteBtn}
+                    onClick={() =>
+                      applyEdit({
+                        kind: 'deleteSet',
+                        blockPosition,
+                        blockExercisePosition: be.position,
+                        roundNumber: 1,
+                        setNumber: roundSets[roundSets.length - 1]!.set_number,
+                      })
+                    }
+                  >
+                    − Remove Last
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-        ))}
+          )
+        })}
       </div>
+
+      {block.kind !== 'single' ? (
+        <div className={styles.blockActions}>
+          <button
+            className={styles.addBtn}
+            onClick={() => {
+              applyEdit({ kind: 'addRound', blockPosition })
+              // Auto-select the new round so the user can tweak it.
+              setActiveRound(block.rounds + 1)
+            }}
+          >
+            + Add Round (clones R{block.rounds})
+          </button>
+          {block.rounds > 1 ? (
+            <button
+              className={styles.deleteBtn}
+              onClick={() => {
+                applyEdit({ kind: 'removeLastRound', blockPosition })
+                // Clamp tab if we were viewing the now-removed round.
+                if (activeRound >= block.rounds) setActiveRound(block.rounds - 1)
+              }}
+            >
+              − Remove Last Round
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className={styles.footer}>
         <Button variant="primary" block onClick={onReady}>

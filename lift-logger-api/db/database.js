@@ -15,6 +15,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const schema = require('./schema');
+const { MIGRATIONS, CURRENT_SCHEMA_VERSION, runMigrations, takePreV3Snapshot } = require('./migrations');
 
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
@@ -32,107 +33,12 @@ db.pragma('foreign_keys = ON');
 
 db.exec(schema);
 
-const CURRENT_SCHEMA_VERSION = 2;
-
-/**
- * Migrations — list of { version, up(db) } applied in ascending order.
- * Each migration runs inside a transaction together with the version bump.
- * Add future migrations at the end; never rewrite history.
- */
-const MIGRATIONS = [
-  // v1 is the baseline covered by schema.js; no-op migration body, just records the version.
-  {
-    version: 1,
-    up(/* db */) {
-      // Baseline — schema.js already created the tables.
-    }
-  },
-  // v2 — Phase 2: add pause / skip / timer-persistence / pending-actuals columns to sessions,
-  //       plus a UNIQUE index on session_sets tuple to prevent edit-mode duplicates.
-  // All ALTERs are guarded by table_info checks so the migration is idempotent.
-  {
-    version: 2,
-    up(database) {
-      const addColumnIfMissing = (table, name, sql) => {
-        const cols = database.prepare(`PRAGMA table_info(${table})`).all();
-        if (!cols.some((c) => c.name === name)) {
-          database.exec(sql);
-        }
-      };
-      addColumnIfMissing('sessions', 'paused_at',
-        'ALTER TABLE sessions ADD COLUMN paused_at INTEGER');
-      addColumnIfMissing('sessions', 'skipped_block_ids',
-        'ALTER TABLE sessions ADD COLUMN skipped_block_ids TEXT');
-      addColumnIfMissing('sessions', 'work_timer_started_at',
-        'ALTER TABLE sessions ADD COLUMN work_timer_started_at INTEGER');
-      addColumnIfMissing('sessions', 'work_timer_duration_sec',
-        'ALTER TABLE sessions ADD COLUMN work_timer_duration_sec INTEGER');
-      // Nullable so clients that don't yet send the field can insert cleanly via
-      // the generic upsertRow (which passes null for missing cols). Treat null as 0.
-      addColumnIfMissing('sessions', 'accumulated_paused_ms',
-        'ALTER TABLE sessions ADD COLUMN accumulated_paused_ms INTEGER');
-      addColumnIfMissing('sessions', 'pending_actuals',
-        'ALTER TABLE sessions ADD COLUMN pending_actuals TEXT');
-      // Dedupe session_sets before adding the unique index — pre-Phase-2 logSet
-      // always generated a new id per call, so edit attempts produced multiple rows
-      // per tuple. Keep the newest (highest updated_at) per tuple, delete the rest.
-      database.exec(`
-        DELETE FROM session_sets
-        WHERE id IN (
-          SELECT id FROM session_sets ss1
-          WHERE EXISTS (
-            SELECT 1 FROM session_sets ss2
-            WHERE ss2.session_id = ss1.session_id
-              AND ss2.block_position = ss1.block_position
-              AND ss2.block_exercise_position = ss1.block_exercise_position
-              AND ss2.round_number = ss1.round_number
-              AND ss2.set_number = ss1.set_number
-              AND (ss2.updated_at > ss1.updated_at
-                   OR (ss2.updated_at = ss1.updated_at AND ss2.id > ss1.id))
-          )
-        )
-      `);
-      // Belt-and-suspenders: prevent duplicate session_sets rows with the same tuple.
-      // Phase 2 introduces edit-mode which must upsert, not insert; this catches client drift.
-      database.exec(`
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_session_sets_tuple
-          ON session_sets(session_id, block_position, block_exercise_position, round_number, set_number)
-      `);
-    }
-  }
-];
-
-function runMigrations(database) {
-  const row = database.prepare('SELECT version FROM schema_version WHERE id = 1').get();
-  const current = row ? row.version : 0;
-
-  const pending = MIGRATIONS.filter(m => m.version > current)
-    .sort((a, b) => a.version - b.version);
-
-  if (pending.length === 0) {
-    // Make sure the schema_version row exists even on fresh DBs that run no migrations.
-    if (!row) {
-      database.prepare(
-        'INSERT INTO schema_version (id, version, updated_at) VALUES (1, ?, ?)'
-      ).run(CURRENT_SCHEMA_VERSION, Date.now());
-    }
-    return;
-  }
-
-  const apply = database.transaction(() => {
-    for (const m of pending) {
-      m.up(database);
-    }
-    const latest = pending[pending.length - 1].version;
-    const now = Date.now();
-    database.prepare(`
-      INSERT INTO schema_version (id, version, updated_at)
-      VALUES (1, @version, @updated_at)
-      ON CONFLICT(id) DO UPDATE SET version = @version, updated_at = @updated_at
-    `).run({ version: latest, updated_at: now });
-  });
-
-  apply();
+// Pre-migration safety net: if we're about to rebuild block_exercise_sets
+// (v2 → v3), take a disk snapshot first. Must happen outside the migration
+// transaction because SQLite forbids VACUUM inside one.
+const snapshotPath = takePreV3Snapshot(db);
+if (snapshotPath) {
+  console.log(`[migration] pre-v3 snapshot saved to ${snapshotPath}`);
 }
 
 runMigrations(db);
@@ -160,7 +66,8 @@ const TABLE_COLUMNS = {
     'block_id', 'exercise_id', 'position', 'alt_exercise_ids', 'created_at'
   ],
   block_exercise_sets: [
-    'block_exercise_id', 'set_number', 'target_weight', 'target_pct_1rm',
+    'block_exercise_id', 'set_number', 'round_number',
+    'target_weight', 'target_pct_1rm',
     'target_reps', 'target_reps_each', 'target_duration_sec', 'target_rpe',
     'is_peak', 'rest_after_sec', 'notes', 'created_at'
   ],
@@ -237,6 +144,12 @@ function normalizeRow(table, row) {
   // created_at defaults to updated_at if the client didn't send one (INSERT fallback).
   if (cols.includes('created_at') && (out.created_at === null || out.created_at === undefined)) {
     out.created_at = out.updated_at;
+  }
+  // block_exercise_sets.round_number was added in v3 and is NOT NULL. Older
+  // clients (pre-v3) omit the field; default to 1 (the round-1 anchor) so their
+  // pushes land cleanly without a coordinated deploy.
+  if (table === 'block_exercise_sets' && (out.round_number === null || out.round_number === undefined)) {
+    out.round_number = 1;
   }
   return out;
 }
@@ -401,6 +314,7 @@ module.exports = {
   SYNC_TABLES,
   WRITE_ORDER,
   CURRENT_SCHEMA_VERSION,
+  MIGRATIONS,
   runMigrations,
   upsertRow,
   getChangesSince,

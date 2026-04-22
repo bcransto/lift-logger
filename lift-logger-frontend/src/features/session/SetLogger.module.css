@@ -1,0 +1,158 @@
+/* SetLogger — full-screen overlay opened on tap of the focused set card.
+   Simpler than SetView (no up/down nav arrows). Dedicated to logging the
+   currently-active set. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  padding: var(--space-4) var(--space-4) var(--space-12);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  z-index: 30;
+  touch-action: pan-y;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+  padding-top: var(--space-2);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 0;
+  text-align: center;
+}
+
+.setLabel {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Stepper card — based on NumberStepper.module.css but with a third column
+   on the left for the sign toggle (weight only). */
+.card {
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.unit {
+  color: var(--text-faint);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rowNoSign {
+  grid-template-columns: auto 1fr auto;
+}
+
+.step {
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+.step:active {
+  transform: scale(0.97);
+}
+
+.sign {
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+}
+.signActive {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.value {
+  font-family: var(--font-display);
+  font-size: 36px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  padding: var(--space-2) 0;
+  min-height: var(--tap-min);
+}
+
+.input {
+  font-family: var(--font-display);
+  font-size: 36px; /* ≥16px prevents iOS Safari auto-zoom */
+  text-align: center;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--accent);
+  width: 100%;
+  padding: var(--space-2) 0;
+  outline: none;
+}
+
+.footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-4);
+}

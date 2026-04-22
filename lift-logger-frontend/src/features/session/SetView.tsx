@@ -64,7 +64,15 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
     if (!snapshot || !viewingCursor) return null
     const b = snapshot.blocks.find((x) => x.position === viewingCursor.blockPosition)
     const be = b?.exercises.find((e) => e.position === viewingCursor.blockExercisePosition)
-    const t = be?.sets.find((s) => s.set_number === viewingCursor.setNumber)
+    // Round-aware target lookup: prefer the per-round row; fall back to the
+    // round-1 anchor if this round has no explicit override.
+    const t =
+      be?.sets.find(
+        (s) =>
+          s.set_number === viewingCursor.setNumber &&
+          (s.round_number ?? 1) === viewingCursor.roundNumber,
+      )
+      ?? be?.sets.find((s) => s.set_number === viewingCursor.setNumber && (s.round_number ?? 1) === 1)
     return be && t ? { be, t } : null
   }, [snapshot, viewingCursor])
 
@@ -203,7 +211,13 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
     if (!latest || !snapshot) return null
     const b = snapshot.blocks.find((x) => x.position === latest.block_position)
     const be = b?.exercises.find((e) => e.position === latest.block_exercise_position)
-    return be?.sets.find((s) => s.set_number === latest.set_number)?.rest_after_sec ?? null
+    if (!be) return null
+    const match =
+      be.sets.find(
+        (s) => s.set_number === latest.set_number && (s.round_number ?? 1) === latest.round_number,
+      )
+      ?? be.sets.find((s) => s.set_number === latest.set_number && (s.round_number ?? 1) === 1)
+    return match?.rest_after_sec ?? null
   }, [logged, executionCursor, snapshot])
 
   if (!target || !viewingCursor) return null
@@ -297,9 +311,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
           <>This set hasn't been reached yet. Edits apply when you reach it.</>
         ) : isDone ? (
           <>Editing the logged values for this set. Changes save automatically.</>
-        ) : (
-          <>Edits save automatically. They apply when you tap <strong>Next</strong> or a timer hits zero.</>
-        )}
+        ) : null}
       </p>
     </div>
   )

@@ -8,7 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
-import { cursorKey, cursorKeyFromRow } from './sessionEngine'
+import { cursorKey, cursorKeyFromRow, setsForRound } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
 import styles from './WorkoutView.module.css'
 
@@ -48,7 +48,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
     let doneSets = 0
     for (let r = 1; r <= rounds; r++) {
       for (const be of b.exercises) {
-        for (const t of be.sets) {
+        for (const t of setsForRound(be, r)) {
           totalSets++
           const key = cursorKey({
             blockPosition: b.position,
@@ -72,7 +72,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
       const rounds = b.kind === 'single' ? 1 : b.rounds
       for (let r = 1; r <= rounds; r++) {
         for (const be of b.exercises) {
-          for (const t of be.sets) {
+          for (const t of setsForRound(be, r)) {
             const key = cursorKey({
             blockPosition: b.position,
             blockExercisePosition: be.position,

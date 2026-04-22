@@ -163,3 +163,65 @@
 .footer {
   margin-top: var(--space-4);
 }
+
+/* Round tabs (superset/circuit only). Horizontal strip; scrolls on overflow
+   so many-round circuits don't wrap. Tab width grows with label so R10 fits. */
+.roundTabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.roundTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.roundTab {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 56px;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.roundTab:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.roundTabActive {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Tiny dot appended to the label when a round has explicit overrides. */
+.roundTabDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 6px;
+  background: var(--accent-2);
+  vertical-align: middle;
+}
+
+/* Block-level actions for superset/circuit (Add/Remove Round). Sits below
+   the set grid but above the footer/I'm-Ready button. Mirrors the per-
+   exercise .exActions layout. */
+.blockActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

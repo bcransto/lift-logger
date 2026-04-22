@@ -136,6 +136,7 @@ function seed(): {
     id: id as BlockExerciseSetId,
     block_exercise_id: be.id,
     set_number: n,
+    round_number: 1,
     target_weight: w,
     target_pct_1rm: null,
     target_reps: reps,

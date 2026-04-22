@@ -7,7 +7,7 @@
 //
 // Cursor fields are 1-indexed to match DB columns.
 
-import type { Cursor, CursorWithTarget, SnapshotBlock, WorkoutSnapshot } from '../../types/schema'
+import type { Cursor, CursorWithTarget, SnapshotBlock, SnapshotBlockExercise, SnapshotSetTarget, WorkoutSnapshot } from '../../types/schema'
 
 /** Walk every planned set in the order the app will execute them. */
 export function* iterateSets(snapshot: WorkoutSnapshot): Generator<CursorWithTarget> {
@@ -15,7 +15,7 @@ export function* iterateSets(snapshot: WorkoutSnapshot): Generator<CursorWithTar
     const rounds = block.kind === 'single' ? 1 : block.rounds
     for (let r = 1; r <= rounds; r++) {
       for (const be of block.exercises) {
-        for (const t of be.sets) {
+        for (const t of setsForRound(be, r)) {
           yield {
             cursor: {
               blockPosition: block.position,
@@ -31,6 +31,25 @@ export function* iterateSets(snapshot: WorkoutSnapshot): Generator<CursorWithTar
       }
     }
   }
+}
+
+/**
+ * Return the targets that execute in round `r` for a given BE, with implicit
+ * inheritance — if the snapshot has no round-`r` entries, fall back to the
+ * round-1 anchors (re-tagged to round r). Handles:
+ *   - Pre-v3 session snapshots (no round_number field at all → treated as 1).
+ *   - Newly authored supersets without explicit per-round overrides.
+ *   - `block.rounds` bumped past the highest override round.
+ *
+ * The target's `round_number` is rewritten to `r` so downstream consumers can
+ * trust it for keying and display.
+ */
+export function setsForRound(be: SnapshotBlockExercise, r: number): SnapshotSetTarget[] {
+  const own = be.sets.filter((s) => (s.round_number ?? 1) === r)
+  if (own.length > 0) return own
+  if (r === 1) return []
+  const anchors = be.sets.filter((s) => (s.round_number ?? 1) === 1)
+  return anchors.map((s) => ({ ...s, round_number: r }))
 }
 
 /**
@@ -136,8 +155,11 @@ export function firstCursorOfBlock(
   if (!b || b.exercises.length === 0) return null
   const firstBePosition = Math.min(...b.exercises.map((e) => e.position))
   const be = b.exercises.find((e) => e.position === firstBePosition)!
-  if (be.sets.length === 0) return null
-  const firstSetNumber = Math.min(...be.sets.map((s) => s.set_number))
+  // The round-1 slice of be.sets defines the set_number list for the block.
+  // Higher-round entries are overrides that share the same set_numbers.
+  const round1Sets = be.sets.filter((s) => (s.round_number ?? 1) === 1)
+  if (round1Sets.length === 0) return null
+  const firstSetNumber = Math.min(...round1Sets.map((s) => s.set_number))
   return {
     blockPosition: b.position,
     blockExercisePosition: firstBePosition,
@@ -164,7 +186,11 @@ export function setsPerBlockExercise(block: SnapshotBlock, blockExercisePosition
   const be = block.exercises.find((x) => x.position === blockExercisePosition)
   if (!be) return 0
   const rounds = block.kind === 'single' ? 1 : block.rounds
-  return be.sets.length * rounds
+  // Round 1 defines the set_number list; higher-round entries are per-round
+  // overrides that share the same set_numbers. Count only round-1 to get
+  // "sets per round", then multiply by total rounds.
+  const setsPerRound = be.sets.filter((s) => (s.round_number ?? 1) === 1).length
+  return setsPerRound * rounds
 }
 
 /**
@@ -183,7 +209,7 @@ export function iterateBlockCursors(
   const out: Cursor[] = []
   for (let r = 1; r <= rounds; r++) {
     for (const be of bes) {
-      for (const s of be.sets) {
+      for (const s of setsForRound(be, r)) {
         out.push({
           blockPosition: b.position,
           blockExercisePosition: be.position,

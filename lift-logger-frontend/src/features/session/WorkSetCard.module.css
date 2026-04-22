@@ -83,3 +83,36 @@
   font-size: 11px;
   color: var(--ok);
 }
+
+/* Record variant — 2-column row layout. Left column holds the set details,
+   right column is the Record button spanning the details' height. Preserves
+   the same card height as non-focused cards. */
+.cardWithRecord {
+  flex-direction: row;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.cardBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0; /* let the column shrink so the button keeps its size */
+}
+
+.recordBtn {
+  align-self: stretch;
+  min-width: 96px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: #0a0a0a;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.recordBtn:active { transform: scale(0.98); }

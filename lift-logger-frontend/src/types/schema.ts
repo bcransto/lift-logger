@@ -87,6 +87,10 @@ export type BlockExerciseSetRow = {
   id: BlockExerciseSetId
   block_exercise_id: BlockExerciseId
   set_number: number
+  // round_number (v3): 1 for all single-block rows and the anchor row on
+  // superset/circuit. Rows with round_number > 1 are PARTIAL overrides —
+  // null columns inherit from the round-1 anchor at snapshot-build time.
+  round_number: number
   target_weight: number | null
   target_pct_1rm: number | null
   target_reps: number | null
@@ -170,6 +174,11 @@ export type ExercisePrRow = {
 
 export type SnapshotSetTarget = {
   set_number: number
+  // round_number (v3): required on every target in a built snapshot. The
+  // snapshot-builder emits one entry per (round_number, set_number) with
+  // overrides already merged against the round-1 anchor — consumers (engine,
+  // UI) never have to re-resolve inheritance.
+  round_number: number
   target_weight?: number | null
   target_pct_1rm?: number | null
   target_reps?: number | null

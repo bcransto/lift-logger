@@ -55,7 +55,7 @@ function readWorkoutTree(workoutId) {
   const sets = beIds.length === 0 ? [] : db.prepare(`
     SELECT * FROM block_exercise_sets
     WHERE block_exercise_id IN (${beIds.map(() => '?').join(',')})
-    ORDER BY block_exercise_id, set_number ASC
+    ORDER BY block_exercise_id, round_number, set_number ASC
   `).all(...beIds);
 
   const setsByBE = new Map();
@@ -109,6 +109,7 @@ function readWorkoutTree(workoutId) {
  *             sets: [
  *               {
  *                 id?, set_number?,
+ *                 round_number?,     // v3: defaults to 1; >1 = partial override per-round
  *                 target_weight?, target_pct_1rm?, target_reps?,
  *                 target_reps_each?, target_duration_sec?, target_rpe?,
  *                 is_peak?, rest_after_sec?, notes?
@@ -246,27 +247,48 @@ function upsertWorkoutTree(tree) {
         });
 
         const sets = Array.isArray(be.sets) ? be.sets : [];
-        sets.forEach((s, sIdx) => {
+        // Track set_number fill-in per (round_number) so per-round sets that
+        // omit set_number get numbered independently of other rounds.
+        const nextSetNumberByRound = new Map();
+        sets.forEach((s) => {
           const sId = s.id || genId('bes');
-          const setNum = Number.isFinite(s.set_number) ? s.set_number : sIdx + 1;
+          const roundNum = Number.isFinite(s.round_number) && s.round_number > 0 ? s.round_number : 1;
+          // Auto-assign set_number per round if omitted. Keeps round 2 overrides
+          // aligned to round 1 when the author lists them in order.
+          let setNum;
+          if (Number.isFinite(s.set_number)) {
+            setNum = s.set_number;
+          } else {
+            const cur = nextSetNumberByRound.get(roundNum) ?? 0;
+            setNum = cur + 1;
+          }
+          nextSetNumberByRound.set(roundNum, setNum);
+          if (roundNum > rounds) {
+            console.warn(
+              `[upsertWorkoutTree] orphan override row: block ${blockId} be ${beId} ` +
+              `round_number=${roundNum} > rounds=${rounds}. Row is preserved but ` +
+              `filtered out of the executed snapshot until block.rounds is raised.`,
+            );
+          }
 
           const existingSet = db.prepare('SELECT created_at FROM block_exercise_sets WHERE id = ?').get(sId);
           const setCreated = existingSet?.created_at ?? now;
 
           db.prepare(`
             INSERT INTO block_exercise_sets
-              (id, block_exercise_id, set_number,
+              (id, block_exercise_id, set_number, round_number,
                target_weight, target_pct_1rm, target_reps, target_reps_each,
                target_duration_sec, target_rpe, is_peak, rest_after_sec, notes,
                created_at, updated_at)
             VALUES
-              (@id, @block_exercise_id, @set_number,
+              (@id, @block_exercise_id, @set_number, @round_number,
                @target_weight, @target_pct_1rm, @target_reps, @target_reps_each,
                @target_duration_sec, @target_rpe, @is_peak, @rest_after_sec, @notes,
                @created_at, @updated_at)
             ON CONFLICT(id) DO UPDATE SET
               block_exercise_id = @block_exercise_id,
               set_number = @set_number,
+              round_number = @round_number,
               target_weight = @target_weight,
               target_pct_1rm = @target_pct_1rm,
               target_reps = @target_reps,
@@ -281,6 +303,7 @@ function upsertWorkoutTree(tree) {
             id: sId,
             block_exercise_id: beId,
             set_number: setNum,
+            round_number: roundNum,
             target_weight: s.target_weight ?? null,
             target_pct_1rm: s.target_pct_1rm ?? null,
             target_reps: s.target_reps ?? null,

@@ -15,7 +15,10 @@ type Props = {
  *   unilateral→ 37.5 × 10 ea × 3
  */
 export function SetPatternRenderer({ blockExercise, isUnilateral }: Props) {
-  const sets = blockExercise.sets
+  // Template summary shows "one round" of the pattern. With v3 per-round
+  // snapshots, filter to round-1 anchor rows; callers that want a per-round
+  // preview should pass a be with the round-specific slice already filtered.
+  const sets = blockExercise.sets.filter((s) => (s.round_number ?? 1) === 1)
   if (!sets.length) return <span className={styles.empty}>—</span>
 
   const allDuration = sets.every((s) => s.target_duration_sec != null)

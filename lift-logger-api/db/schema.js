@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS workout_blocks (
   position INTEGER NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('single', 'superset', 'circuit')),
   rounds INTEGER NOT NULL DEFAULT 1,
+  -- rest_after_sec: rest AFTER this block finishes. For superset/circuit with
+  -- rounds > 1 it's between-rounds rest; for single blocks it's between-block
+  -- rest (drives the block timer countdown on last-set tap).
   rest_after_sec INTEGER,
   setup_cue TEXT,
   created_at INTEGER NOT NULL,
@@ -84,10 +87,17 @@ CREATE INDEX IF NOT EXISTS idx_block_exercises_exercise ON block_exercises(exerc
 CREATE INDEX IF NOT EXISTS idx_block_exercises_updated ON block_exercises(updated_at);
 
 -- ---------- block_exercise_sets ----------
+-- round_number semantics (v3): for kind='single' blocks it's always 1. For
+-- kind='superset'|'circuit', round_number=1 is the mandatory anchor row per
+-- (block_exercise_id, set_number); rows with round_number > 1 are PARTIAL
+-- overrides — null columns inherit from the round-1 anchor at snapshot-build
+-- time. Orphan rows (round_number > workout_blocks.rounds) are preserved but
+-- filtered out by the snapshot builder so author intent survives shrink→regrow.
 CREATE TABLE IF NOT EXISTS block_exercise_sets (
   id TEXT PRIMARY KEY,
   block_exercise_id TEXT NOT NULL,
   set_number INTEGER NOT NULL CHECK (set_number >= 1),
+  round_number INTEGER NOT NULL DEFAULT 1 CHECK (round_number >= 1),
   target_weight REAL,
   target_pct_1rm REAL,
   target_reps INTEGER,
@@ -99,10 +109,10 @@ CREATE TABLE IF NOT EXISTS block_exercise_sets (
   notes TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  UNIQUE(block_exercise_id, set_number),
+  UNIQUE(block_exercise_id, round_number, set_number),
   CHECK (NOT (target_weight IS NOT NULL AND target_pct_1rm IS NOT NULL))
 );
-CREATE INDEX IF NOT EXISTS idx_bes_be ON block_exercise_sets(block_exercise_id, set_number);
+CREATE INDEX IF NOT EXISTS idx_bes_be ON block_exercise_sets(block_exercise_id, round_number, set_number);
 CREATE INDEX IF NOT EXISTS idx_bes_updated ON block_exercise_sets(updated_at);
 
 -- ---------- sessions ----------

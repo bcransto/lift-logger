@@ -58,5 +58,23 @@ export class IronDb extends Dexie {
         'id, session_id, exercise_id, logged_at, updated_at, ' +
         '[session_id+block_position+block_exercise_position+round_number+set_number]',
     })
+    // v3 — per-round targets on block_exercise_sets. New compound index on
+    // (block_exercise_id, round_number, set_number) so buildWorkoutSnapshot's
+    // per-round lookup hits the index. The old [block_exercise_id+set_number]
+    // index is kept for back-compat with any remaining callers; prune later.
+    // Upgrade backfill: existing rows lack round_number — set to 1 so a locally
+    // offline client works before the first sync pull brings the column from
+    // the backend.
+    this.version(3).stores({
+      block_exercise_sets:
+        'id, block_exercise_id, [block_exercise_id+set_number], ' +
+        '[block_exercise_id+round_number+set_number], updated_at',
+    }).upgrade(async (tx) => {
+      await tx.table('block_exercise_sets').toCollection().modify((row: BlockExerciseSetRow) => {
+        if (row.round_number === undefined || row.round_number === null) {
+          row.round_number = 1
+        }
+      })
+    })
   }
 }

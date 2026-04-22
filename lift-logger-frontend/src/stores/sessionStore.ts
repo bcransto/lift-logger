@@ -26,6 +26,7 @@ import type {
   SavePreference,
   SessionRow,
   SessionSetRow,
+  SnapshotBlockExercise,
   SnapshotSetTarget,
   WorkoutSnapshot,
 } from '../types/schema'
@@ -41,6 +42,13 @@ export type LoggedSetInput = {
   rpe: number | null
   restTakenSec: number | null
   notes?: string | null
+  /**
+   * If false, the cursor is NOT advanced after the upsert. Used by the
+   * single-block flow where Record logs and advancement happens on a later
+   * Next tap. Defaults to true for backward compat with superset/circuit
+   * inline-Next buttons.
+   */
+  advance?: boolean
 }
 
 export type StructuralEdit =
@@ -48,6 +56,10 @@ export type StructuralEdit =
       kind: 'editSetTarget'
       blockPosition: number
       blockExercisePosition: number
+      // v3: roundNumber is required. Legacy callers that don't distinguish
+      // rounds should pass 1 (the anchor). Edits to round > 1 affect only
+      // that round's override row.
+      roundNumber: number
       setNumber: number
       patch: Partial<SnapshotSetTarget>
     }
@@ -55,13 +67,28 @@ export type StructuralEdit =
       kind: 'addSet'
       blockPosition: number
       blockExercisePosition: number
+      // v3: roundNumber on the target identifies which round to append to.
       target: SnapshotSetTarget
     }
   | {
       kind: 'deleteSet'
       blockPosition: number
       blockExercisePosition: number
+      roundNumber: number
       setNumber: number
+    }
+  // v3: append one round to a superset/circuit block, cloning the last round's
+  // targets onto every BE as explicit round_number = rounds+1 entries.
+  | {
+      kind: 'addRound'
+      blockPosition: number
+    }
+  // v3: decrement rounds on a superset/circuit block. Override rows for the
+  // trimmed round are preserved in the snapshot (snapshot builder filters them
+  // back in if rounds is bumped again later).
+  | {
+      kind: 'removeLastRound'
+      blockPosition: number
     }
 
 export type SessionState = {
@@ -112,6 +139,15 @@ export type SessionState = {
    * the rest derivation is hidden.
    */
   restSkippedAt: number | null
+
+  /** Start the single active timer (count-up if durationSec null). */
+  startActiveTimer: (durationSec: number | null) => Promise<void>
+  /** Stop any running active timer. */
+  stopActiveTimer: () => Promise<void>
+  /** Append one set to the current block inheriting actuals as targets. */
+  appendSetToCurrentBlock: () => Promise<void>
+  /** Advance the cursor one step (respecting skipped blocks). */
+  advanceCursor: () => void
 }
 
 // ─── helpers (pure, exported for tests) ───────────────────────────────
@@ -122,24 +158,89 @@ export function applyEditToSnapshot(
 ): WorkoutSnapshot {
   const blocks = snapshot.blocks.map((block) => {
     if (block.position !== edit.blockPosition) return block
+    // Block-level edits (add/remove round) don't touch BE.sets directly —
+    // they mutate block.rounds and append/trim round overrides across all BEs.
+    if (edit.kind === 'addRound') {
+      const nextRound = block.rounds + 1
+      const exercises = block.exercises.map((be) => {
+        // Clone the last round's targets onto the new round. Use setsForRoundInSnapshot
+        // to resolve inherited targets (round-1 anchors if no explicit override existed).
+        const lastRoundSets = resolveSetsForRound(be, block.rounds)
+        const cloned = lastRoundSets.map((s) => ({ ...s, round_number: nextRound }))
+        return { ...be, sets: [...be.sets, ...cloned] }
+      })
+      return { ...block, rounds: nextRound, exercises }
+    }
+    if (edit.kind === 'removeLastRound') {
+      if (block.rounds <= 1) return block
+      return { ...block, rounds: block.rounds - 1 }
+    }
     const exercises = block.exercises.map((be) => {
       if (be.position !== edit.blockExercisePosition) return be
       let sets = be.sets.slice()
       if (edit.kind === 'editSetTarget') {
-        sets = sets.map((s) => (s.set_number === edit.setNumber ? { ...s, ...edit.patch } : s))
+        sets = sets.map((s) =>
+          (s.round_number ?? 1) === edit.roundNumber && s.set_number === edit.setNumber
+            ? { ...s, ...edit.patch }
+            : s,
+        )
       } else if (edit.kind === 'addSet') {
         sets.push(edit.target)
-        sets.sort((a, b) => a.set_number - b.set_number)
+        sets.sort((a, b) => {
+          const rd = (a.round_number ?? 1) - (b.round_number ?? 1)
+          return rd !== 0 ? rd : a.set_number - b.set_number
+        })
       } else if (edit.kind === 'deleteSet') {
-        sets = sets.filter((s) => s.set_number !== edit.setNumber)
-        // Renumber contiguously after delete so advance() stays valid.
-        sets = sets.map((s, i) => ({ ...s, set_number: i + 1 }))
+        // Delete only from the target round. Renumbering is scoped per round
+        // so other rounds retain their set_number list independently.
+        const targetRound = edit.roundNumber
+        const otherRounds = sets.filter((s) => (s.round_number ?? 1) !== targetRound)
+        const renumbered = sets
+          .filter((s) => (s.round_number ?? 1) === targetRound && s.set_number !== edit.setNumber)
+          .sort((a, b) => a.set_number - b.set_number)
+          .map((s, i) => ({ ...s, set_number: i + 1 }))
+        sets = [...otherRounds, ...renumbered].sort((a, b) => {
+          const rd = (a.round_number ?? 1) - (b.round_number ?? 1)
+          return rd !== 0 ? rd : a.set_number - b.set_number
+        })
       }
       return { ...be, sets }
     })
     return { ...block, exercises }
   })
   return { ...snapshot, blocks }
+}
+
+/** Lift setsForRound logic for snapshot-level edits (not exported). */
+function resolveSetsForRound(be: SnapshotBlockExercise, r: number): SnapshotSetTarget[] {
+  const own = be.sets.filter((s) => (s.round_number ?? 1) === r)
+  if (own.length > 0) return own
+  if (r === 1) return []
+  const anchors = be.sets.filter((s) => (s.round_number ?? 1) === 1)
+  return anchors.map((s) => ({ ...s, round_number: r }))
+}
+
+/**
+ * Backfill `round_number` on every set target in a snapshot to 1 when missing.
+ * Pre-v3 sessions were serialized before the field existed; the engine's
+ * round-fallback still works without this pass, but downstream consumers that
+ * compare `round_number === r` want a defined value, and edits we persist back
+ * to the snapshot should always carry the field.
+ */
+function normalizeSnapshotForV3(snapshot: WorkoutSnapshot): WorkoutSnapshot {
+  let dirty = false
+  const blocks = snapshot.blocks.map((block) => {
+    const exercises = block.exercises.map((be) => {
+      const sets = be.sets.map((s) => {
+        if (s.round_number !== undefined && s.round_number !== null) return s
+        dirty = true
+        return { ...s, round_number: 1 }
+      })
+      return dirty ? { ...be, sets } : be
+    })
+    return dirty ? { ...block, exercises } : block
+  })
+  return dirty ? { ...snapshot, blocks } : snapshot
 }
 
 /**
@@ -207,7 +308,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
     let snapshot: WorkoutSnapshot
     try {
-      snapshot = JSON.parse(active.workout_snapshot) as WorkoutSnapshot
+      snapshot = normalizeSnapshotForV3(JSON.parse(active.workout_snapshot) as WorkoutSnapshot)
     } catch {
       set({ hydrated: true })
       return
@@ -360,7 +461,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
     await db.session_sets.put(row)
 
-    const next = advance(snapshot, cursor, skippedBlockIds)
+    const shouldAdvance = input?.advance !== false
+    const next = shouldAdvance ? advance(snapshot, cursor, skippedBlockIds) : cursor
     const ses = await db.sessions.get(sessionId)
     if (ses) {
       await db.sessions.put({
@@ -655,6 +757,131 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   skipRest() {
     set({ restSkippedAt: Date.now() })
   },
+
+  /**
+   * Start the single "active timer" (at most one runs at a time — rest, block,
+   * or work all share the same slot). Persisted to `sessions.work_timer_*`
+   * so it survives page reload via wall-clock math.
+   * - durationSec = null → count-up (ticks indefinitely)
+   * - durationSec > 0   → countdown from durationSec
+   */
+  async startActiveTimer(durationSec) {
+    const { sessionId } = get()
+    if (!sessionId) return
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    await db.sessions.put({
+      ...ses,
+      work_timer_started_at: now,
+      work_timer_duration_sec: durationSec,
+      updated_at: now,
+    })
+  },
+
+  /**
+   * Advance the cursor one step (respecting skipped blocks). Used by the
+   * single-block flow's Next button to move focus to the next set after
+   * the user has rested.
+   */
+  advanceCursor() {
+    const { snapshot, cursor, skippedBlockIds } = get()
+    if (!snapshot || !cursor) return
+    const next = advance(snapshot, cursor, skippedBlockIds)
+    set({ cursor: next })
+  },
+
+  /** Stop any running active timer. */
+  async stopActiveTimer() {
+    const { sessionId } = get()
+    if (!sessionId) return
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    if (ses.work_timer_started_at == null && ses.work_timer_duration_sec == null) return
+    await db.sessions.put({
+      ...ses,
+      work_timer_started_at: null,
+      work_timer_duration_sec: null,
+      updated_at: now,
+    })
+  },
+
+  /**
+   * Append one set to the current block using the actuals from the set just
+   * recorded as the new set's targets. Always session-only (mutates
+   * `sessions.workout_snapshot` only — `block_exercise_sets` untouched).
+   * Advances cursor to the new set.
+   *
+   * Used by the Block Complete overlay's "+ Add a set" action.
+   */
+  async appendSetToCurrentBlock() {
+    const { sessionId, snapshot, cursor } = get()
+    if (!sessionId || !snapshot || !cursor) return
+    const block = snapshot.blocks.find((b) => b.position === cursor.blockPosition)
+    if (!block || block.exercises.length === 0) return
+    const be = block.exercises.find((e) => e.position === cursor.blockExercisePosition) ?? block.exercises[0]
+    if (!be || be.sets.length === 0) return
+    const logged = await db.session_sets
+      .where('[session_id+block_position+block_exercise_position+round_number+set_number]')
+      .equals([
+        sessionId,
+        cursor.blockPosition,
+        be.position,
+        cursor.roundNumber,
+        cursor.setNumber,
+      ])
+      .first()
+
+    // Scope "last set" to the current round so an add-set mid-round 2 doesn't
+    // inherit from round 3 (which may have overrides) or round 1 (stale).
+    const roundSets = be.sets
+      .filter((s) => (s.round_number ?? 1) === cursor.roundNumber)
+      .sort((a, b) => a.set_number - b.set_number)
+    const lastSet = roundSets[roundSets.length - 1] ?? be.sets[be.sets.length - 1]!
+    const nextSetNumber = (lastSet.set_number ?? 0) + 1
+    const newTarget: SnapshotSetTarget = {
+      set_number: nextSetNumber,
+      round_number: cursor.roundNumber,
+      target_weight: logged?.actual_weight ?? lastSet.target_weight ?? null,
+      target_reps: logged?.actual_reps ?? lastSet.target_reps ?? null,
+      target_duration_sec: logged?.actual_duration_sec ?? lastSet.target_duration_sec ?? null,
+      target_reps_each: lastSet.target_reps_each ?? false,
+      is_peak: false,
+      rest_after_sec: lastSet.rest_after_sec ?? null,
+    }
+
+    // Apply session-only snapshot mutation, bypassing the SavePreferencePrompt.
+    const edit: StructuralEdit = {
+      kind: 'addSet',
+      blockPosition: cursor.blockPosition,
+      blockExercisePosition: be.position,
+      target: newTarget,
+    }
+    const nextSnapshot = applyEditToSnapshot(snapshot, edit)
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        workout_snapshot: JSON.stringify(nextSnapshot),
+        // Also reset the active timer — user is re-entering exec mode.
+        work_timer_started_at: null,
+        work_timer_duration_sec: null,
+        updated_at: now,
+      })
+    }
+    // Move cursor to the new set.
+    set({
+      snapshot: nextSnapshot,
+      cursor: {
+        blockPosition: cursor.blockPosition,
+        blockExercisePosition: be.position,
+        roundNumber: cursor.roundNumber,
+        setNumber: nextSetNumber,
+      },
+    })
+  },
 }))
 
 // ─── internal: edit flush ─────────────────────────────────────────────
@@ -699,6 +926,46 @@ async function propagateEditsToTemplate(
       .where({ workout_id: workoutId, position: edit.blockPosition })
       .first()
     if (!block) continue
+
+    // Block-level edits (add/remove round) mutate workout_blocks.rounds and
+    // clone/skip block_exercise_sets rows across all BEs in the block.
+    if (edit.kind === 'addRound') {
+      const nextRounds = block.rounds + 1
+      const bes = await db.block_exercises.where('block_id').equals(block.id).toArray()
+      for (const beRow of bes) {
+        const existing = await db.block_exercise_sets
+          .where('block_exercise_id')
+          .equals(beRow.id)
+          .toArray()
+        // Clone the last round's rows (inheriting round-1 if no explicit last
+        // round exists) into a new round at `nextRounds`.
+        const lastRoundRows = existing.filter((r) => (r.round_number ?? 1) === block.rounds)
+        const sourceRows = lastRoundRows.length > 0
+          ? lastRoundRows
+          : existing.filter((r) => (r.round_number ?? 1) === 1)
+        for (const src of sourceRows) {
+          await db.block_exercise_sets.put({
+            ...src,
+            id: uuid('bes') as unknown as typeof src.id,
+            round_number: nextRounds,
+            created_at: now,
+            updated_at: now,
+          })
+        }
+      }
+      await db.workout_blocks.put({ ...block, rounds: nextRounds, updated_at: now })
+      continue
+    }
+
+    if (edit.kind === 'removeLastRound') {
+      if (block.rounds <= 1) continue
+      // Preserve-and-orphan: don't delete override rows for the trimmed round.
+      // Snapshot builder filters them out; if the user bumps rounds again, they
+      // reappear with their original targets.
+      await db.workout_blocks.put({ ...block, rounds: block.rounds - 1, updated_at: now })
+      continue
+    }
+
     const be = await db.block_exercises
       .where({ block_id: block.id, position: edit.blockExercisePosition })
       .first()
@@ -706,7 +973,8 @@ async function propagateEditsToTemplate(
 
     if (edit.kind === 'editSetTarget') {
       const bes = await db.block_exercise_sets
-        .where({ block_exercise_id: be.id, set_number: edit.setNumber })
+        .where('[block_exercise_id+round_number+set_number]')
+        .equals([be.id, edit.roundNumber, edit.setNumber])
         .first()
       if (!bes) continue
       await db.block_exercise_sets.put({
@@ -732,6 +1000,7 @@ async function propagateEditsToTemplate(
         id: uuid('bes') as unknown as ReturnType<typeof uuid> & string as never,
         block_exercise_id: be.id,
         set_number: edit.target.set_number,
+        round_number: edit.target.round_number ?? 1,
         target_weight: edit.target.target_weight ?? null,
         target_pct_1rm: edit.target.target_pct_1rm ?? null,
         target_reps: edit.target.target_reps ?? null,
@@ -746,7 +1015,8 @@ async function propagateEditsToTemplate(
       })
     } else if (edit.kind === 'deleteSet') {
       const bes = await db.block_exercise_sets
-        .where({ block_exercise_id: be.id, set_number: edit.setNumber })
+        .where('[block_exercise_id+round_number+set_number]')
+        .equals([be.id, edit.roundNumber, edit.setNumber])
         .first()
       if (bes) await db.block_exercise_sets.delete(bes.id)
     }

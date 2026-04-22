@@ -41,6 +41,11 @@ function wrap(fn) {
 const blockExerciseSetSchema = z.object({
   id: z.string().optional(),
   set_number: z.number().int().positive().optional(),
+  round_number: z.number().int().positive().optional().describe(
+    'For superset/circuit per-round overrides. Defaults to 1 (the anchor). ' +
+    'Rows with round_number > 1 are PARTIAL overrides — null/omitted columns ' +
+    'inherit from the round-1 anchor at snapshot-build time. Always 1 for single-block sets.'
+  ),
   target_weight: z.number().optional().nullable().describe('Absolute weight; mutually exclusive with target_pct_1rm'),
   target_pct_1rm: z.number().min(0).max(1.2).optional().nullable().describe('Decimal 0.0-1.2 (e.g. 0.75)'),
   target_reps: z.number().int().nonnegative().optional().nullable(),
@@ -48,7 +53,11 @@ const blockExerciseSetSchema = z.object({
   target_duration_sec: z.number().int().nonnegative().optional().nullable().describe('For time-based sets (HIIT, planks)'),
   target_rpe: z.number().int().min(1).max(10).optional().nullable(),
   is_peak: z.boolean().optional().describe('UI ★ flag for pyramid peaks'),
-  rest_after_sec: z.number().int().nonnegative().optional().nullable(),
+  rest_after_sec: z.number().int().nonnegative().optional().nullable().describe(
+    'Rest AFTER this set. On the last set of a round in a superset/circuit, ' +
+    'this becomes the between-rounds rest for that specific round (overrides ' +
+    'workout_blocks.rest_after_sec).'
+  ),
   notes: z.string().optional().nullable(),
 });
 
@@ -157,12 +166,19 @@ function registerTools(server) {
       'Rest rules:',
       '- block_exercise_sets.rest_after_sec = rest AFTER that specific set. 0/null = no rest.',
       '- Set rest_after_sec on the FIRST N-1 sets of a block, leave 0/null on the last set (unless you want rest before the next block).',
-      '- workout_blocks.rest_after_sec = between-rounds rest (only applies for superset/circuit with rounds > 1).',
+      '- workout_blocks.rest_after_sec = rest AFTER this block finishes. For superset/circuit with rounds > 1 it\'s the default between-rounds rest; the last-set row of a specific round can override it via its own rest_after_sec. For single blocks it\'s between-block rest (drives the block timer countdown when the user taps the last set).',
+      '',
+      'Per-round targets (superset/circuit only):',
+      '- Each (block_exercise_id, set_number) needs a round-1 ANCHOR row (round_number omitted or = 1). The anchor carries the default targets that apply to every round.',
+      '- To vary weights/reps/rest between rounds, add additional set rows with the SAME set_number but round_number = 2, 3, etc. These are PARTIAL overrides — any field you omit/set to null inherits from the round-1 anchor. Example: one anchor {set_number:1, target_weight:100, target_reps:10} + override {set_number:1, round_number:2, target_weight:110} yields round 2 at 110×10 (reps inherited).',
+      '- If you omit overrides for a round, it inherits the anchor entirely. No need to duplicate rows for every round unless something differs.',
+      '- Keep round_number ≤ block.rounds. Rows beyond that are preserved but filtered out of the executed snapshot (so users can safely shrink rounds and re-expand later).',
       '',
       'Common pitfalls:',
       '- Forgetting is_peak: true on the top set of a pyramid.',
       '- Setting target_weight AND target_pct_1rm on the same set (CHECK constraint rejects).',
       '- Using kind: "standard" or "hiit" — those do not exist. HIIT = circuit with target_duration_sec.',
+      '- Authoring a round-2 override without a round-1 anchor for the same set_number. The override row will exist but the executor has no anchor to inherit from, so the set won\'t appear in any round.',
       '',
       'After create, call get_workout to verify shape.',
     ].join('\n'),

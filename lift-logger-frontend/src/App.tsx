@@ -16,7 +16,7 @@ export function App() {
 
   useWakeLock(sessionId !== null)
 
-  // Hide tab bar during session flow (transition/active/summary).
+  // Hide tab bar during session flow (intro/active/summary).
   const inSession = location.pathname.startsWith('/session/')
 
   return (

@@ -360,3 +360,127 @@ describe('sessionEngine — firstUnloggedCursorInBlock', () => {
     expect(firstUnloggedCursorInBlock(s, 1, logged)).toBeNull()
   })
 })
+
+// ─── v3: per-round target overrides ──────────────────────────────────
+
+/**
+ * Progressive superset: 2 BEs (Curl, Tricep) × 3 rounds. Round 1 is the
+ * anchor; round 2 and 3 carry explicit override rows with different weights
+ * and reps. Represents the output of `buildWorkoutSnapshot` after round
+ * expansion.
+ */
+function progressiveSuperset(): WorkoutSnapshot {
+  return {
+    workout_id: wid,
+    name: 'Progressive',
+    snapshot_at: 0,
+    blocks: [
+      mkBlock({
+        id: 'b1' as WorkoutBlockId,
+        position: 1,
+        kind: 'superset',
+        rounds: 3,
+        exercises: [
+          {
+            id: 'beA' as BlockExerciseId,
+            exercise_id: 'exA' as ExerciseId,
+            name: 'Curl',
+            position: 1,
+            alt_exercise_ids: [],
+            sets: [
+              { set_number: 1, round_number: 1, target_weight: 30, target_reps: 12 },
+              { set_number: 1, round_number: 2, target_weight: 35, target_reps: 10 },
+              { set_number: 1, round_number: 3, target_weight: 40, target_reps: 8 },
+            ],
+          },
+          {
+            id: 'beB' as BlockExerciseId,
+            exercise_id: 'exB' as ExerciseId,
+            name: 'Tricep',
+            position: 2,
+            alt_exercise_ids: [],
+            sets: [
+              { set_number: 1, round_number: 1, target_weight: 40, target_reps: 12 },
+              { set_number: 1, round_number: 2, target_weight: 45, target_reps: 10 },
+              { set_number: 1, round_number: 3, target_weight: 50, target_reps: 8 },
+            ],
+          },
+        ],
+      }),
+    ],
+  }
+}
+
+describe('sessionEngine — per-round overrides (v3)', () => {
+  const s = progressiveSuperset()
+
+  it('iterateSets walks round-major across explicit round-N entries', () => {
+    const cursors = [...iterateSets(s)].map((e) => cursorKey(e.cursor))
+    expect(cursors).toEqual([
+      '1.1.1.1',
+      '1.2.1.1',
+      '1.1.2.1',
+      '1.2.2.1',
+      '1.1.3.1',
+      '1.2.3.1',
+    ])
+  })
+
+  it('targetAt returns the correct round-specific target', () => {
+    const t1 = targetAt(s, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 })
+    expect(t1?.target.target_weight).toBe(30)
+    expect(t1?.target.target_reps).toBe(12)
+    const t2 = targetAt(s, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 2, setNumber: 1 })
+    expect(t2?.target.target_weight).toBe(35)
+    expect(t2?.target.target_reps).toBe(10)
+    const t3 = targetAt(s, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 3, setNumber: 1 })
+    expect(t3?.target.target_weight).toBe(40)
+    expect(t3?.target.target_reps).toBe(8)
+  })
+
+  it('totalSetCount === 6', () => {
+    expect(totalSetCount(s)).toBe(6)
+  })
+
+  it('firstCursorOfBlock lands on round 1 set 1', () => {
+    expect(firstCursorOfBlock(s, 1)).toEqual({
+      blockPosition: 1,
+      blockExercisePosition: 1,
+      roundNumber: 1,
+      setNumber: 1,
+    })
+  })
+
+  it('implicit inheritance: superset with only round-1 entries still walks every round', () => {
+    // Pre-v3 shaped snapshot (or a post-v3 template with no overrides):
+    // one round-1 entry per BE, but block.rounds=3. setsForRound replicates.
+    const implicit: WorkoutSnapshot = {
+      workout_id: wid,
+      name: 'Implicit',
+      snapshot_at: 0,
+      blocks: [
+        mkBlock({
+          id: 'b1' as WorkoutBlockId,
+          position: 1,
+          kind: 'superset',
+          rounds: 3,
+          exercises: [
+            {
+              id: 'beA' as BlockExerciseId,
+              exercise_id: 'exA' as ExerciseId,
+              name: 'Curl',
+              position: 1,
+              alt_exercise_ids: [],
+              sets: [{ set_number: 1, round_number: 1, target_weight: 30, target_reps: 12 }],
+            },
+          ],
+        }),
+      ],
+    }
+    const cursors = [...iterateSets(implicit)].map((e) => cursorKey(e.cursor))
+    expect(cursors).toEqual(['1.1.1.1', '1.1.2.1', '1.1.3.1'])
+    // Inherited target for round 2 reuses round-1 weight.
+    const r2 = targetAt(implicit, { blockPosition: 1, blockExercisePosition: 1, roundNumber: 2, setNumber: 1 })
+    expect(r2?.target.target_weight).toBe(30)
+  })
+})

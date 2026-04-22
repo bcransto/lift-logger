@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Cursor } from '../types/schema'
 
-type OverlayKind = 'set' | 'workout' | null
+type OverlayKind = 'set' | 'workout' | 'setLogger' | 'blockComplete' | null
 
 type UndoState = {
   message: string

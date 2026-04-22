@@ -48,7 +48,7 @@ export function OverviewScreen() {
 
   const onStart = async () => {
     const id = await startSession(workout.id)
-    if (id) navigate(`/session/${id}/transition/1`, { replace: true })
+    if (id) navigate(`/session/${id}/intro/1`, { replace: true })
   }
 
   return (
