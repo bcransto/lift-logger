@@ -150,11 +150,13 @@ export function BlockView() {
       if (!entry) return
       if (entry.block.kind === 'single') return // single blocks use startActiveTimer on tap
       const isTimed = entry.target.target_duration_sec != null
-      const alreadyStarted = ses.work_timer_started_at != null
+      const startedAt = ses.work_timer_started_at
+      const durationSec = ses.work_timer_duration_sec
+      const alreadyStarted = startedAt != null
       const timerElapsed =
-        alreadyStarted &&
-        ses.work_timer_duration_sec != null &&
-        Date.now() - ses.work_timer_started_at >= ses.work_timer_duration_sec * 1000
+        startedAt != null &&
+        durationSec != null &&
+        Date.now() - startedAt >= durationSec * 1000
       // Write directly to Dexie (bypassing `startWorkTimer` action) — this
       // effect can fire before the store's `sessionId` is hydrated, and the
       // store action no-ops when it's null. We have a trusted sessionId from
