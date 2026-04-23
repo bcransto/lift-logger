@@ -22,7 +22,6 @@ import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import { cursorKey, cursorKeyFromRow, isLastSetOfBlock, isNewBlock, parseSetKey, setsForRound, targetAt } from './sessionEngine'
-import { TimerDock } from './TimerDock'
 import { WorkSetCard } from './WorkSetCard'
 import { RestCard } from './RestCard'
 import { UndoToast } from './UndoToast'
@@ -65,10 +64,11 @@ export function BlockView() {
   const logSet = useSessionStore((s) => s.logSet)
   const skipCurrentSet = useSessionStore((s) => s.skipCurrentSet)
   const endWorkout = useSessionStore((s) => s.endWorkout)
-  const startWorkTimer = useSessionStore((s) => s.startWorkTimer)
   const startActiveTimer = useSessionStore((s) => s.startActiveTimer)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const advanceCursor = useSessionStore((s) => s.advanceCursor)
+  const skipRest = useSessionStore((s) => s.skipRest)
+  const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
   const { overlay, openOverlay, closeOverlay, showUndo } = useUiStore()
 
@@ -121,24 +121,63 @@ export function BlockView() {
   }, [cursor, sessionId, navigate, snapshot, bpStr, overlay])
 
   // Work-timer lifecycle for legacy timed-work sets (superset/circuit only).
+  //
+  // Keyed off cursor changes only — `session` and `snapshot` are NOT in deps
+  // because this effect writes to sessions, which re-emits `session` via
+  // useLiveQuery, which reinstantiates `snapshot` via useMemo. That ref churn
+  // would retrigger the effect even when nothing semantic changed, eventually
+  // tripping React's Maximum-update-depth guard on supersets.
+  //
+  // On cursor *advance* into a timed set, we restart the timer fresh (each
+  // HIIT/circuit set gets its own 20s window). On the first mount with an
+  // already-running timer (reload mid-set), we leave it alone so the wall-
+  // clock countdown survives the reload.
+  const prevCursorKeyRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!cursor || !snapshot || !session) return
-    const entry = targetAt(snapshot, cursor)
-    if (!entry) return
-    if (entry.block.kind === 'single') return // single blocks use startActiveTimer on tap
-    const isTimed = entry.target.target_duration_sec != null
-    const alreadyStarted = session.work_timer_started_at != null
-    if (isTimed && !alreadyStarted) {
-      void startWorkTimer(entry.target.target_duration_sec as number)
-    } else if (!isTimed && alreadyStarted) {
-      void db.sessions.put({
-        ...session,
-        work_timer_started_at: null,
-        work_timer_duration_sec: null,
-        updated_at: Date.now(),
-      })
-    }
-  }, [cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber, snapshot, session, startWorkTimer])
+    if (!sessionId || !cursor) return
+    const nowKey = cursorKey(cursor)
+    const wasKey = prevCursorKeyRef.current
+    prevCursorKeyRef.current = nowKey
+    const isCursorChange = wasKey !== null && wasKey !== nowKey
+    let cancelled = false
+    void (async () => {
+      const ses = await db.sessions.get(sessionId)
+      if (cancelled || !ses) return
+      let snap: WorkoutSnapshot | null = null
+      try { snap = JSON.parse(ses.workout_snapshot) as WorkoutSnapshot } catch { return }
+      if (!snap) return
+      const entry = targetAt(snap, cursor)
+      if (!entry) return
+      if (entry.block.kind === 'single') return // single blocks use startActiveTimer on tap
+      const isTimed = entry.target.target_duration_sec != null
+      const alreadyStarted = ses.work_timer_started_at != null
+      const timerElapsed =
+        alreadyStarted &&
+        ses.work_timer_duration_sec != null &&
+        Date.now() - ses.work_timer_started_at >= ses.work_timer_duration_sec * 1000
+      // Write directly to Dexie (bypassing `startWorkTimer` action) — this
+      // effect can fire before the store's `sessionId` is hydrated, and the
+      // store action no-ops when it's null. We have a trusted sessionId from
+      // the route, so we can just `put`.
+      if (isTimed && (isCursorChange || !alreadyStarted || timerElapsed)) {
+        const now = Date.now()
+        await db.sessions.put({
+          ...ses,
+          work_timer_started_at: now,
+          work_timer_duration_sec: entry.target.target_duration_sec as number,
+          updated_at: now,
+        })
+      } else if (!isTimed && alreadyStarted) {
+        await db.sessions.put({
+          ...ses,
+          work_timer_started_at: null,
+          work_timer_duration_sec: null,
+          updated_at: Date.now(),
+        })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [sessionId, cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber])
 
   // Workout complete: cursor becomes null after the final logSet advance.
   useEffect(() => {
@@ -365,7 +404,7 @@ export function BlockView() {
   type Card =
     | { kind: 'work'; cursor: Cursor; target: SnapshotSetTarget; be: SnapshotBlockExercise; row: SessionSetRow | undefined }
     | { kind: 'rest'; afterKey: string; durationSec: number; isActive: boolean }
-    | { kind: 'next'; afterKey: string; active: boolean }
+    | { kind: 'roundBreak'; round: number; totalRounds: number }
     | { kind: 'finishBlock'; afterKey: string; active: boolean; isTimed: boolean; isLastBlockOverall: boolean }
   const cards: Card[] = []
 
@@ -375,6 +414,9 @@ export function BlockView() {
   const latestKey = latestInBlock ? cursorKeyFromRow(latestInBlock) : null
 
   for (let r = 1; r <= rounds; r++) {
+    if (r > 1 && rounds > 1) {
+      cards.push({ kind: 'roundBreak', round: r, totalRounds: rounds })
+    }
     for (let beIdx = 0; beIdx < bes.length; beIdx++) {
       const be = bes[beIdx]!
       // Filter to this round's targets (with round-1 fallback for inherited rounds).
@@ -419,6 +461,11 @@ export function BlockView() {
         const restAfter = isRoundBoundary
           ? (t.rest_after_sec ?? block.rest_after_sec ?? 0)
           : (t.rest_after_sec ?? 0)
+        // New flow: SetLogger's Update handles the log + advance directly.
+        // When rest_after_sec > 0, emit a single rest card that ticks down
+        // and hosts the Next button inside itself (skip rest early). With no
+        // rest, nothing sits between this card and the next — Update auto-
+        // advances and the next set becomes focused.
         if (restAfter > 0) {
           cards.push({
             kind: 'rest',
@@ -426,44 +473,57 @@ export function BlockView() {
             durationSec: restAfter,
             isActive: latestKey === key,
           })
-        } else {
-          cards.push({
-            kind: 'next',
-            afterKey: key,
-            active: cursorK === key,
-          })
         }
       }
     }
   }
 
-  const lastRestAfter = (() => {
-    if (!latestInBlock) return null
-    const latestCursor: Cursor = {
-      blockPosition: latestInBlock.block_position,
-      blockExercisePosition: latestInBlock.block_exercise_position,
-      roundNumber: latestInBlock.round_number,
-      setNumber: latestInBlock.set_number,
-    }
-    if (isLastSetOfBlock(snapshot, latestCursor)) {
-      return block.rest_after_sec ?? null
-    }
-    const be = bes.find((e) => e.position === latestInBlock.block_exercise_position)
-    if (!be) return null
-    const match = be.sets.find(
-      (s) =>
-        s.set_number === latestInBlock.set_number &&
-        (s.round_number ?? 1) === latestInBlock.round_number,
-    )
-      ?? be.sets.find((s) => s.set_number === latestInBlock.set_number && (s.round_number ?? 1) === 1)
-    return match?.rest_after_sec ?? null
+  const focusedEntry = targetAt(snapshot, cursor)
+  const focusedRestAfterSec = (() => {
+    if (!focusedEntry) return 0
+    const { block: b, target: t, cursor: c } = focusedEntry
+    const bes2 = b.exercises.slice().sort((a, x) => a.position - x.position)
+    const lastBeIdx = bes2.length - 1
+    const beAt = bes2.findIndex((e) => e.position === c.blockExercisePosition)
+    const setsInRound = setsForRound(bes2[beAt]!, c.roundNumber)
+    const lastSetInBe = setsInRound[setsInRound.length - 1]?.set_number === c.setNumber
+    const isRoundBoundary = lastSetInBe && beAt === lastBeIdx && c.roundNumber < b.rounds
+    return isRoundBoundary
+      ? (t.rest_after_sec ?? b.rest_after_sec ?? 0)
+      : (t.rest_after_sec ?? 0)
   })()
 
-  const focusedEntry = targetAt(snapshot, cursor)
-  const focusedIsTimed = focusedEntry?.target.target_duration_sec != null
+  // Focused-card Done: opens the SetLogger overlay pre-filled with target
+  // values. If the user's target-default is fine they tap Update immediately;
+  // otherwise they adjust weight/reps and tap Update. SetLogger's handler
+  // (onSetLoggerUpdateLegacy) does the actual logSet + advance, gated by
+  // whether a rest timer is configured for this set.
+  const onDoneFocused = () => {
+    openOverlay('setLogger')
+  }
 
-  const onInlineNextLegacy = async () => {
-    await logSet() // default advance: true
+  const onSetLoggerUpdateLegacy = async (actuals: SetLoggerActuals) => {
+    await logSet({
+      actualWeight: actuals.actualWeight,
+      actualReps: actuals.actualReps,
+      actualDurationSec: actuals.actualDurationSec,
+      advance: focusedRestAfterSec === 0,
+    })
+    closeOverlay()
+  }
+
+  const onSetLoggerCancelLegacy = () => {
+    closeOverlay()
+  }
+
+  // Inline Next button on an active rest card — advance cursor + mark rest as
+  // skipped. Marking is what hides the Next button; it also suppresses the
+  // rest derivation elsewhere so the timer slot can switch to the new set's
+  // work timer (restarted by the work-timer lifecycle effect on this cursor
+  // change).
+  const onInlineNextLegacy = () => {
+    skipRest()
+    advanceCursor()
   }
 
   return (
@@ -496,15 +556,6 @@ export function BlockView() {
         <button className={styles.actionBtn} onClick={onEnd}>End Workout</button>
       </div>
 
-      <TimerDock
-        lastLoggedAt={latestInBlock?.logged_at ?? null}
-        lastLoggedRestAfterSec={lastRestAfter}
-        workTimerStartedAt={session.work_timer_started_at ?? null}
-        workTimerDurationSec={session.work_timer_duration_sec ?? null}
-        onRestZero={() => {}}
-        onWorkZero={() => { void logSet() }}
-      />
-
       <div className={styles.stack}>
         {cards.map((c, i) => {
           if (c.kind === 'work') {
@@ -521,38 +572,59 @@ export function BlockView() {
                 showExName={bes.length > 1}
                 round={c.cursor.roundNumber}
                 totalRounds={rounds}
-                onTap={isFocused ? () => openOverlay('set') : undefined}
+                onDone={isFocused ? onDoneFocused : undefined}
+                workTimerStartedAt={isFocused ? session.work_timer_started_at ?? null : null}
+                workTimerDurationSec={isFocused ? session.work_timer_duration_sec ?? null : null}
+                // Auto-log on zero stays on the current cursor so the rest
+                // timer can play out before the next set's work timer starts
+                // — otherwise both countdowns run simultaneously.
+                onTimerZero={isFocused ? () => { void logSet({ advance: false }) } : undefined}
               />
             )
           }
-          if (c.kind === 'rest') {
-            return <RestCard key={`r${i}`} durationSec={c.durationSec} isActive={c.isActive} />
-          }
-          if (c.kind === 'finishBlock') {
-            const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Finish Block'
+          if (c.kind === 'roundBreak') {
             return (
-              <div key={`f${i}`} className={styles.finishBlockWrap}>
-                <button
-                  className={`${styles.finishBlock} ${c.active && !c.isTimed ? styles.finishBlockActive : ''}`}
-                  onClick={c.active && !c.isTimed ? onInlineNextLegacy : undefined}
-                  disabled={!c.active || c.isTimed}
-                  aria-label={label}
-                >
-                  {label}
-                  {c.active && c.isTimed ? <span className={styles.finishHint}> · auto on timer zero</span> : null}
-                </button>
+              <div key={`rb${i}`} className={styles.roundBreak}>
+                <span className={styles.roundBreakRule} />
+                <span className={styles.roundBreakLabel}>
+                  R{c.round} / {c.totalRounds}
+                </span>
+                <span className={styles.roundBreakRule} />
               </div>
             )
           }
+          if (c.kind === 'rest') {
+            const precedingLog = loggedByKey.get(c.afterKey)
+            // A rest is "live" only while the user hasn't explicitly skipped
+            // past it. After tapping Next, restSkippedAt > logged_at → hide
+            // the button + drop the highlighted state so focus can shift to
+            // the new set's work timer.
+            const precedingLogAt = precedingLog?.logged_at ?? null
+            const skipped =
+              restSkippedAt != null && precedingLogAt != null && restSkippedAt > precedingLogAt
+            const live = c.isActive && !skipped
+            return (
+              <RestCard
+                key={`r${i}`}
+                durationSec={c.durationSec}
+                isActive={live}
+                startedAt={precedingLogAt}
+                onNext={live ? onInlineNextLegacy : undefined}
+              />
+            )
+          }
+          // c.kind === 'finishBlock'
+          const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Finish Block'
           return (
-            <div key={`n${i}`} className={styles.inlineNextWrap}>
+            <div key={`f${i}`} className={styles.finishBlockWrap}>
               <button
-                className={`${styles.inlineNext} ${c.active ? styles.inlineNextActive : ''}`}
-                onClick={c.active ? onInlineNextLegacy : undefined}
-                disabled={!c.active || focusedIsTimed}
-                aria-label={c.active ? 'Next set' : 'Next (not active)'}
+                className={`${styles.finishBlock} ${c.active && !c.isTimed ? styles.finishBlockActive : ''}`}
+                onClick={c.active && !c.isTimed ? onInlineNextLegacy : undefined}
+                disabled={!c.active || c.isTimed}
+                aria-label={label}
               >
-                Next →
+                {label}
+                {c.active && c.isTimed ? <span className={styles.finishHint}> · auto on timer zero</span> : null}
               </button>
             </div>
           )
@@ -563,6 +635,13 @@ export function BlockView() {
 
       {overlay === 'set' ? <SetViewOverlay onClose={closeOverlay} /> : null}
       {overlay === 'workout' ? <WorkoutViewOverlay onClose={closeOverlay} /> : null}
+      {overlay === 'setLogger' ? (
+        <SetLogger
+          primaryLabel="Update"
+          onRecord={onSetLoggerUpdateLegacy}
+          onCancel={onSetLoggerCancelLegacy}
+        />
+      ) : null}
     </div>
   )
 }

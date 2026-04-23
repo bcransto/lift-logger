@@ -164,49 +164,7 @@
   margin-top: var(--space-4);
 }
 
-/* Round tabs (superset/circuit only). Horizontal strip; scrolls on overflow
-   so many-round circuits don't wrap. Tab width grows with label so R10 fits. */
-.roundTabs {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: var(--space-1);
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.roundTabs::-webkit-scrollbar {
-  display: none;
-}
-
-.roundTab {
-  position: relative;
-  flex: 0 0 auto;
-  min-width: 56px;
-  min-height: 36px;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-elev-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.roundTab:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-
-.roundTabActive {
-  background: var(--accent-glow);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* Tiny dot appended to the label when a round has explicit overrides. */
+/* Tiny dot appended to the round label when a round has explicit overrides. */
 .roundTabDot {
   display: inline-block;
   width: 6px;
@@ -224,4 +182,94 @@
   display: flex;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+/* Stacked rounds — superset/circuit intro. Each round is its own section
+   with a "ROUND N" header and a 2-column (or N-column) grid of exercises. */
+.rounds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.roundSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Matches the active-view round divider: thin rule + centered chip.
+   Rendered for every round (including R1) so the intro reads as a plan
+   organized by rounds at a glance. */
+.roundHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.roundRule {
+  flex: 1;
+  height: 1px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+.roundLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.pairGrid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.exCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.exHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.exBadge {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 50%;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.exColName {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.setStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }

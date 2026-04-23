@@ -88,6 +88,31 @@
   gap: var(--space-2);
 }
 
+/* Thin horizontal rule + centered round chip, inserted between rounds in
+   multi-round blocks (superset/circuit). Skim aid — the round number is also
+   on each card's label. */
+.roundBreak {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.roundBreakRule {
+  flex: 1;
+  height: 1px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+.roundBreakLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
 .inlineNextWrap {
   display: flex;
   justify-content: center;

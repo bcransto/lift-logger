@@ -43,3 +43,32 @@
 .active .duration {
   color: var(--text);
 }
+
+.done {
+  border-color: var(--ok);
+  border-left-color: var(--ok);
+  background: transparent;
+}
+
+.done .label,
+.done .duration {
+  color: var(--ok);
+}
+
+/* Inline Next button — appears inside the active rest card, right-justified.
+   Lets the user skip rest early without a separate button row below. */
+.nextBtn {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  background: var(--accent);
+  color: #0a0a0a;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  min-height: 32px;
+}
+.nextBtn:active { transform: scale(0.97); }

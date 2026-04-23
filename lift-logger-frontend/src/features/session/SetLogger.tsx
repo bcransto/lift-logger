@@ -31,13 +31,16 @@ export type SetLoggerActuals = {
 }
 
 type Props = {
-  /** Called when the user taps Record. Parent owns logSet + post-log routing. */
+  /** Called when the user taps the primary button. Parent owns logSet + post-log routing. */
   onRecord: (actuals: SetLoggerActuals) => void | Promise<void>
   /** Called when the user taps Cancel. Parent owns timer-stop + overlay close. */
   onCancel: () => void | Promise<void>
+  /** Primary button label. Defaults to "Done" (single-block Record flow);
+      superset/circuit Mod flow uses "Update". */
+  primaryLabel?: string
 }
 
-export function SetLogger({ onRecord, onCancel }: Props) {
+export function SetLogger({ onRecord, onCancel, primaryLabel = 'Done' }: Props) {
   const sessionId = useSessionStore((s) => s.sessionId)
   const cursor = useSessionStore((s) => s.cursor)
 
@@ -134,7 +137,7 @@ export function SetLogger({ onRecord, onCancel }: Props) {
           Cancel
         </Button>
         <Button variant="primary" block onClick={handleRecord}>
-          Done
+          {primaryLabel}
         </Button>
       </div>
     </div>

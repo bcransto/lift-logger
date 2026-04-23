@@ -77,6 +77,20 @@
   color: var(--text-dim);
 }
 
+/* Live countdown for a focused timed set. Slightly larger than the static
+   reps label so the user's eye catches the tick, but not so large that the
+   card layout shifts. */
+.counter {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.counterReady {
+  color: var(--ok);
+}
+
 .actual {
   margin-top: var(--space-1);
   font-family: var(--font-mono);
@@ -116,3 +130,29 @@
   cursor: pointer;
 }
 .recordBtn:active { transform: scale(0.98); }
+
+/* Single Done button on the focused superset/circuit card. Opens SetLogger
+   where the user confirms or modifies target values before committing. The
+   card body stays on the left; the Done button spans the full card height
+   on the right (same row treatment as the single-block Record button). */
+.cardWithActions {
+  flex-direction: row;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.doneBtn {
+  align-self: stretch;
+  min-width: 96px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: #0a0a0a;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.doneBtn:active { transform: scale(0.98); }
