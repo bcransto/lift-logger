@@ -83,7 +83,7 @@ export function HomeScreen() {
         </div>
         <SyncIndicator />
       </header>
-      <h1 className={styles.display}>IRON.</h1>
+      <h1 className={styles.display}>Lift Logger</h1>
 
       <input
         className={styles.search}

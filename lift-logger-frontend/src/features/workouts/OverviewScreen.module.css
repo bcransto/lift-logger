@@ -1,5 +1,7 @@
 .root {
-  padding: var(--space-4) var(--space-4) var(--space-12);
+  /* Bottom: tab bar height + ~64px clearance so the Start Workout button
+     isn't pinned to the bottom under the fixed tab bar. */
+  padding: var(--space-4) var(--space-4) calc(var(--tab-bar-height) + 64px);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);

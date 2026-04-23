@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['fonts/*.woff2', 'icons/*.png'],
       manifest: {
-        name: 'IRON',
-        short_name: 'IRON',
+        name: 'Lift Logger',
+        short_name: 'Lift Logger',
         description: 'Sweat-on-glass workout tracker',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
