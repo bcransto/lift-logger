@@ -215,7 +215,12 @@ export function BlockIntroScreen() {
                 </span>
                 <span className={styles.roundRule} />
               </div>
-              <div className={styles.pairGrid} style={{ gridTemplateColumns: `repeat(${sortedExercises.length}, 1fr)` }}>
+              <div
+                className={styles.pairGrid}
+                style={{
+                  gridTemplateColumns: `repeat(${sortedExercises.length > 4 ? 2 : sortedExercises.length}, 1fr)`,
+                }}
+              >
                 {sortedExercises.map((be, idx) => {
                   const roundSets = setsForRound(be, r)
                     .slice()
