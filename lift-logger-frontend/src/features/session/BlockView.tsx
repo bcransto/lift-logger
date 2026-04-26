@@ -68,6 +68,7 @@ export function BlockView() {
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const advanceCursor = useSessionStore((s) => s.advanceCursor)
   const skipRest = useSessionStore((s) => s.skipRest)
+  const skipBlock = useSessionStore((s) => s.skipBlock)
   const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
   const { overlay, openOverlay, closeOverlay, showUndo } = useUiStore()
@@ -528,6 +529,35 @@ export function BlockView() {
     advanceCursor()
   }
 
+  // Skip the entire superset/circuit block: marks it as skipped (excludes it
+  // from "unlogged remaining" math) and advances the cursor to the next
+  // non-skipped block. Confirms first because skip is destructive — the
+  // block won't be auto-revisited.
+  const onSkipBlock = async () => {
+    const unloggedInBlock = (() => {
+      let n = 0
+      for (let r = 1; r <= block.rounds; r++) {
+        for (const be of bes) {
+          for (const t of setsForRound(be, r)) {
+            const k = cursorKey({
+              blockPosition: block.position,
+              blockExercisePosition: be.position,
+              roundNumber: r,
+              setNumber: t.set_number,
+            })
+            if (!loggedByKey.has(k)) n++
+          }
+        }
+      }
+      return n
+    })()
+    const msg = unloggedInBlock > 0
+      ? `Skip this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} will be left unlogged.`
+      : 'Skip this block?'
+    if (!window.confirm(msg)) return
+    await skipBlock(block.id)
+  }
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -555,6 +585,7 @@ export function BlockView() {
 
       <div className={styles.secondaryActions}>
         <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
+        <button className={styles.actionBtn} onClick={onSkipBlock}>Skip Block</button>
         <button className={styles.actionBtn} onClick={onEnd}>End Workout</button>
       </div>
 
