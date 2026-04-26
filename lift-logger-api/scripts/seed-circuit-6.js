@@ -51,7 +51,7 @@ const workout_blocks = [
     workout_id: 'wk_circuit_6',
     position: 1,
     kind: 'circuit',
-    rounds: 3,
+    rounds: 2,
     rest_after_sec: 60,
     setup_cue: 'Six stations · **30s** work · **15s** transition.',
     created_at: now,

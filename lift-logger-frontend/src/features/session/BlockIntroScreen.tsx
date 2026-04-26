@@ -218,7 +218,7 @@ export function BlockIntroScreen() {
               <div
                 className={styles.pairGrid}
                 style={{
-                  gridTemplateColumns: `repeat(${sortedExercises.length > 4 ? 2 : sortedExercises.length}, 1fr)`,
+                  gridTemplateColumns: `repeat(${sortedExercises.length > 2 ? 2 : sortedExercises.length}, 1fr)`,
                 }}
               >
                 {sortedExercises.map((be, idx) => {
