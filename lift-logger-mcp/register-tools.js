@@ -158,30 +158,12 @@ function registerTools(server) {
 
   server.tool(
     'create_workout',
-    [
-      'Create a workout template with nested blocks/exercises/sets. See docs/workout-authoring-guide.md for full semantics.',
-      '',
-      'Block kinds: "single" (one exercise, pyramid or straight sets; rounds always 1), "superset" (2+ exercises cycled per round; rounds = N), "circuit" (same shape as superset, typically time-based / HIIT).',
-      '',
-      'Rest rules:',
-      '- block_exercise_sets.rest_after_sec = rest AFTER that specific set. 0/null = no rest.',
-      '- Set rest_after_sec on the FIRST N-1 sets of a block, leave 0/null on the last set (unless you want rest before the next block).',
-      '- workout_blocks.rest_after_sec = rest AFTER this block finishes. For superset/circuit with rounds > 1 it\'s the default between-rounds rest; the last-set row of a specific round can override it via its own rest_after_sec. For single blocks it\'s between-block rest (drives the block timer countdown when the user taps the last set).',
-      '',
-      'Per-round targets (superset/circuit only):',
-      '- Each (block_exercise_id, set_number) needs a round-1 ANCHOR row (round_number omitted or = 1). The anchor carries the default targets that apply to every round.',
-      '- To vary weights/reps/rest between rounds, add additional set rows with the SAME set_number but round_number = 2, 3, etc. These are PARTIAL overrides — any field you omit/set to null inherits from the round-1 anchor. Example: one anchor {set_number:1, target_weight:100, target_reps:10} + override {set_number:1, round_number:2, target_weight:110} yields round 2 at 110×10 (reps inherited).',
-      '- If you omit overrides for a round, it inherits the anchor entirely. No need to duplicate rows for every round unless something differs.',
-      '- Keep round_number ≤ block.rounds. Rows beyond that are preserved but filtered out of the executed snapshot (so users can safely shrink rounds and re-expand later).',
-      '',
-      'Common pitfalls:',
-      '- Forgetting is_peak: true on the top set of a pyramid.',
-      '- Setting target_weight AND target_pct_1rm on the same set (CHECK constraint rejects).',
-      '- Using kind: "standard" or "hiit" — those do not exist. HIIT = circuit with target_duration_sec.',
-      '- Authoring a round-2 override without a round-1 anchor for the same set_number. The override row will exist but the executor has no anchor to inherit from, so the set won\'t appear in any round.',
-      '',
-      'After create, call get_workout to verify shape.',
-    ].join('\n'),
+    'Create / author a new workout template (blocks → exercises → sets). ' +
+    'Block kinds: "single" | "superset" | "circuit" (HIIT = circuit with target_duration_sec; ' +
+    'no "standard" or "hiit" kind exists). Set target_weight OR target_pct_1rm, never both. ' +
+    'For superset/circuit per-round overrides, every (block_exercise, set_number) needs a ' +
+    'round-1 anchor row before round_number ≥ 2 overrides. Full semantics in ' +
+    'docs/workout-authoring-guide.md. After create, call get_workout to verify shape.',
     workoutTreeCreateSchema,
     wrap(createWorkout),
   );
