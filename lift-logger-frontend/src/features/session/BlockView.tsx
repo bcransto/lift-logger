@@ -736,8 +736,8 @@ function RestWithNext({
 // 0 as configured and skip the fallback, so use `> 0` instead.
 function restAtBoundary(
   isRoundBoundary: boolean,
-  setRest: number | null,
-  blockRest: number | null,
+  setRest: number | null | undefined,
+  blockRest: number | null | undefined,
 ): number {
   if (isRoundBoundary) {
     if (setRest != null && setRest > 0) return setRest
