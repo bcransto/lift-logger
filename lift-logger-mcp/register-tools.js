@@ -219,14 +219,13 @@ function registerTools(server) {
 
   server.tool(
     'delete_session',
-    'Hard-delete a session and all its session_sets, then recompute exercise_prs ' +
-    'from remaining sessions for every exercise the deleted session touched. ' +
-    'Refuses sessions with status="active". Note: server-side delete does not ' +
-    'propagate to the iPhone Dexie mirror (sync only carries upserts) — fine ' +
-    'for cleaning up agent-created test sessions, but on-device-created sessions ' +
-    'will linger in local Dexie until manual clear (no UI impact: the frontend ' +
-    'has no completed-session list).',
-    { sessionId: z.string() },
+    'Hard-delete a session + its session_sets and recompute that exercise PRs from remaining sessions. ' +
+    'Refuses status="active" unless force=true (active is also the state of sessions the user started ' +
+    'but never finished — pass force=true to clean those up).',
+    {
+      sessionId: z.string(),
+      force: z.boolean().optional().describe('Bypass the active-session guard. Use for stale active sessions the user never finished.'),
+    },
     wrap(deleteSession),
   );
 

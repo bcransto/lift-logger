@@ -229,15 +229,16 @@ function querySessionSets({
 /**
  * delete_session — hard-delete a session, its session_sets, and recompute
  * exercise_prs for every exercise the deleted session touched. Refuses
- * sessions with status='active'. Returns { id, deleted, sessionSetsDeleted,
- * prsRecomputed }.
+ * sessions with status='active' unless force=true (active is also the
+ * default for sessions the user started and never finished). Returns
+ * { id, deleted, sessionSetsDeleted, prsRecomputed }.
  *
  * NB: recompute step writes exercise_prs — narrow exception to the
  * "MCP never writes exercise_prs" convention. Necessary because PR state
  * is no longer truthful after a session delete.
  */
-function deleteSession({ sessionId }) {
-  const result = deleteSessionTree(sessionId);
+function deleteSession({ sessionId, force = false }) {
+  const result = deleteSessionTree(sessionId, { force });
   if (!result.deleted) throw new Error(`session not found: ${sessionId}`);
   return { id: sessionId, ...result };
 }

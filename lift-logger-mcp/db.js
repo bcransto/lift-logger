@@ -440,8 +440,10 @@ function recomputeExercisePRsFromScratch(exerciseId, txDb = db) {
  * Hard-delete a session and all its session_sets, then recompute PRs from
  * remaining sessions for every exercise the deleted session touched.
  *
- * Refuses to delete sessions with status='active' — would yank the rug out
- * from under a live workout.
+ * Refuses to delete sessions with status='active' unless `force` is true.
+ * The guard exists to avoid yanking the rug out from under a live workout,
+ * but `active` is also the default state for sessions the user started and
+ * never explicitly finished — for cleaning those up, pass force=true.
  *
  * Returns { deleted, sessionSetsDeleted, prsRecomputed } or { deleted: false }
  * if the session id doesn't exist.
@@ -451,11 +453,11 @@ function recomputeExercisePRsFromScratch(exerciseId, txDb = db) {
  * server-side cleanup use case; the frontend has no completed-session list
  * screen so the only visible effect is HomeScreen's "New" chip computation.
  */
-function deleteSessionTree(sessionId) {
+function deleteSessionTree(sessionId, { force = false } = {}) {
   const existing = db.prepare('SELECT id, status FROM sessions WHERE id = ?').get(sessionId);
   if (!existing) return { deleted: false, sessionSetsDeleted: 0, prsRecomputed: 0 };
-  if (existing.status === 'active') {
-    throw new Error(`cannot delete active session: ${sessionId}`);
+  if (existing.status === 'active' && !force) {
+    throw new Error(`cannot delete active session: ${sessionId} (pass force=true to override)`);
   }
 
   let sessionSetsDeleted = 0;
