@@ -67,15 +67,19 @@ export function BlockIntroScreen() {
     }
   }
   const sortedExercises = block.exercises.slice().sort((a, b) => a.position - b.position)
+  const hasProgressInBlock = (logged ?? []).some((r) => r.block_position === blockPosition)
+  const ctaLabel = hasProgressInBlock ? 'Resume →' : 'I’m Ready →'
 
   const onReady = () => {
     const c = cursor
     if (!c) {
-      navigate(`/session/${sessionId}/summary`)
+      navigate(`/session/${sessionId}/summary`, { replace: true })
       return
     }
     const setKey = `${c.blockExercisePosition}.${c.roundNumber}.${c.setNumber}`
-    navigate(`/session/${sessionId}/active/${c.blockPosition}/${setKey}`)
+    // replace (not push) so iOS edge-swipe-back from active doesn't pop to
+    // the intro screen we just left — it goes to the overview/home behind it.
+    navigate(`/session/${sessionId}/active/${c.blockPosition}/${setKey}`, { replace: true })
   }
 
   return (
@@ -293,7 +297,7 @@ export function BlockIntroScreen() {
 
       <div className={styles.footer}>
         <Button variant="primary" block onClick={onReady}>
-          I’m Ready →
+          {ctaLabel}
         </Button>
       </div>
     </div>

@@ -40,29 +40,40 @@ export function WorkoutViewOverlay({ onClose }: Props) {
 
   const loggedKeys = new Set((logged ?? []).map(cursorKeyFromRow))
 
-  const blockStatus = (blockPos: number, blockId: string): 'done' | 'current' | 'skipped' | 'pending' => {
-    if (skippedBlockIds.has(blockId)) return 'skipped'
+  type BlockStatus = 'done' | 'current' | 'skipped' | 'partial' | 'pending'
+  const blockProgress = (
+    blockPos: number,
+    blockId: string,
+  ): { status: BlockStatus; done: number; total: number } => {
     const b = snapshot.blocks.find((x) => x.position === blockPos)!
     const rounds = b.kind === 'single' ? 1 : b.rounds
-    let totalSets = 0
-    let doneSets = 0
+    let total = 0
+    let done = 0
     for (let r = 1; r <= rounds; r++) {
       for (const be of b.exercises) {
         for (const t of setsForRound(be, r)) {
-          totalSets++
+          total++
           const key = cursorKey({
             blockPosition: b.position,
             blockExercisePosition: be.position,
             roundNumber: r,
             setNumber: t.set_number,
           })
-          if (loggedKeys.has(key)) doneSets++
+          if (loggedKeys.has(key)) done++
         }
       }
     }
-    if (doneSets >= totalSets && totalSets > 0) return 'done'
-    if (cursor && cursor.blockPosition === blockPos) return 'current'
-    return 'pending'
+    // Precedence: skipped > done > current > partial > pending.
+    // `current` wins over `partial` so the user sees where execution actually
+    // is — a partially-logged active block reads as "CURRENT 3/8", not
+    // "PARTIAL 3/8".
+    let status: BlockStatus
+    if (skippedBlockIds.has(blockId)) status = 'skipped'
+    else if (done >= total && total > 0) status = 'done'
+    else if (cursor && cursor.blockPosition === blockPos) status = 'current'
+    else if (done > 0) status = 'partial'
+    else status = 'pending'
+    return { status, done, total }
   }
 
   const onEnd = async () => {
@@ -99,7 +110,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
 
       <ol className={styles.list}>
         {snapshot.blocks.map((b, i) => {
-          const status = blockStatus(b.position, b.id)
+          const { status, done, total } = blockProgress(b.position, b.id)
           return (
             <li key={b.id} className={`${styles.row} ${styles[status]}`}>
               <div className={styles.rowHead}>
@@ -110,7 +121,7 @@ export function WorkoutViewOverlay({ onClose }: Props) {
                   </div>
                   <div className={styles.meta}>
                     {b.kind === 'single' ? 'Straight' : `${b.kind} × ${b.rounds}`}
-                    {status !== 'pending' ? ` · ${status.toUpperCase()}` : ''}
+                    {` · ${status.toUpperCase()} ${done}/${total}`}
                   </div>
                 </div>
               </div>
@@ -119,7 +130,20 @@ export function WorkoutViewOverlay({ onClose }: Props) {
                   <button className={styles.actionBtn} onClick={() => skipBlock(b.id)}>Skip Block</button>
                 ) : null}
                 {status === 'skipped' ? (
-                  <button className={styles.actionBtn} onClick={() => returnToBlock(b.id)}>Return</button>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={async () => { await returnToBlock(b.id); onClose() }}
+                  >
+                    Return
+                  </button>
+                ) : null}
+                {status === 'partial' ? (
+                  <button
+                    className={styles.actionBtn}
+                    onClick={async () => { await returnToBlock(b.id); onClose() }}
+                  >
+                    Resume
+                  </button>
                 ) : null}
               </div>
             </li>

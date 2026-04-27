@@ -61,6 +61,7 @@
 .current { border-color: var(--accent); background: var(--accent-glow); }
 .done { color: var(--text-dim); border-color: rgba(139, 195, 74, 0.4); }
 .skipped { border-color: var(--accent-2); background: rgba(255, 194, 31, 0.06); opacity: 0.85; }
+.partial { border-style: dashed; border-color: rgba(139, 195, 74, 0.45); }
 .pending {}
 
 .rowHead {

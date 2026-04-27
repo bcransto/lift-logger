@@ -66,6 +66,7 @@ export function BlockView() {
   const endWorkout = useSessionStore((s) => s.endWorkout)
   const startActiveTimer = useSessionStore((s) => s.startActiveTimer)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
+  const adjustWorkTimer = useSessionStore((s) => s.adjustWorkTimer)
   const advanceCursor = useSessionStore((s) => s.advanceCursor)
   const skipRest = useSessionStore((s) => s.skipRest)
   const skipBlock = useSessionStore((s) => s.skipBlock)
@@ -375,6 +376,7 @@ export function BlockView() {
                     startedAt={session.work_timer_started_at ?? null}
                     durationSec={session.work_timer_duration_sec ?? null}
                     onNext={() => void onInlineNext()}
+                    onAdjust={(delta) => void adjustWorkTimer(delta)}
                   />
                 ) : null}
               </div>
@@ -456,14 +458,7 @@ export function BlockView() {
         }
 
         const isRoundBoundary = isLastSetInBe && isLastBeInRound && !isLastRound
-        // v3 per-round rest: at a round boundary, prefer the rest_after_sec
-        // of the last-set row of the ending round (that's `t` here — we're
-        // on the last set of the last BE of round `r`). Falls back to the
-        // block-level rest so legacy templates without per-round rest keep
-        // their existing single-value behavior.
-        const restAfter = isRoundBoundary
-          ? (t.rest_after_sec ?? block.rest_after_sec ?? 0)
-          : (t.rest_after_sec ?? 0)
+        const restAfter = restAtBoundary(isRoundBoundary, t.rest_after_sec, block.rest_after_sec)
         // New flow: SetLogger's Update handles the log + advance directly.
         // When rest_after_sec > 0, emit a single rest card that ticks down
         // and hosts the Next button inside itself (skip rest early). With no
@@ -481,20 +476,7 @@ export function BlockView() {
     }
   }
 
-  const focusedEntry = targetAt(snapshot, cursor)
-  const focusedRestAfterSec = (() => {
-    if (!focusedEntry) return 0
-    const { block: b, target: t, cursor: c } = focusedEntry
-    const bes2 = b.exercises.slice().sort((a, x) => a.position - x.position)
-    const lastBeIdx = bes2.length - 1
-    const beAt = bes2.findIndex((e) => e.position === c.blockExercisePosition)
-    const setsInRound = setsForRound(bes2[beAt]!, c.roundNumber)
-    const lastSetInBe = setsInRound[setsInRound.length - 1]?.set_number === c.setNumber
-    const isRoundBoundary = lastSetInBe && beAt === lastBeIdx && c.roundNumber < b.rounds
-    return isRoundBoundary
-      ? (t.rest_after_sec ?? b.rest_after_sec ?? 0)
-      : (t.rest_after_sec ?? 0)
-  })()
+  const focusedRestAfterSec = restForCursor(snapshot, cursor)
 
   // Focused-card Done: opens the SetLogger overlay pre-filled with target
   // values. If the user's target-default is fine they tap Update immediately;
@@ -611,7 +593,7 @@ export function BlockView() {
                 // Auto-log on zero stays on the current cursor so the rest
                 // timer can play out before the next set's work timer starts
                 // — otherwise both countdowns run simultaneously.
-                onTimerZero={isFocused ? () => { void logSet({ advance: false }) } : undefined}
+                onTimerZero={isFocused ? () => { void logSet({ advance: focusedRestAfterSec === 0 }) } : undefined}
               />
             )
           }
@@ -643,6 +625,10 @@ export function BlockView() {
                 isActive={live}
                 startedAt={precedingLogAt}
                 onNext={live ? onInlineNextLegacy : undefined}
+                // Circuits keep the HIIT auto-loop (rest expires → next set's
+                // work timer takes over). Supersets are user-paced lifting,
+                // so the timer counts up past expiry until the user taps Next.
+                autoAdvance={block.kind === 'circuit'}
               />
             )
           }
@@ -681,17 +667,21 @@ export function BlockView() {
 
 // ─── RestWithNext ──────────────────────────────────────────────────
 // Rendered below a just-logged card in the single-block layout. Shows a
-// live-updating timer (countdown or count-up, per the session's active-
-// timer fields) and a Next button that advances focus + stops the timer.
+// live-updating timer (countdown that flips to `+MM:SS` count-up after
+// expiry, or pure count-up when no duration is set), ±15s buttons that
+// nudge the planned duration on the fly, and a Next button that advances
+// focus + stops the timer.
 
 function RestWithNext({
   startedAt,
   durationSec,
   onNext,
+  onAdjust,
 }: {
   startedAt: number | null
   durationSec: number | null
   onNext: () => void
+  onAdjust: (deltaSec: number) => void
 }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -706,9 +696,15 @@ function RestWithNext({
       return { text: mmss(Math.max(0, elapsed)), ready: false, label: 'Elapsed' }
     }
     const remaining = durationSec - elapsed
-    if (remaining <= 0) return { text: 'READY', ready: true, label: 'Rest' }
+    if (remaining <= 0) {
+      return { text: `+${mmss(-remaining)}`, ready: true, label: 'Rest' }
+    }
     return { text: mmss(remaining), ready: false, label: 'Rest' }
   })()
+
+  // ±15 only meaningful for countdown timers — pure count-up has no duration
+  // to nudge, so hide the buttons there.
+  const showSteps = durationSec != null
 
   return (
     <div className={styles.singleTimer}>
@@ -720,11 +716,48 @@ function RestWithNext({
           {display?.text ?? '—'}
         </div>
       </div>
-      <button type="button" className={styles.singleNextBtn} onClick={onNext}>
-        Next →
-      </button>
+      <div className={styles.singleTimerActions}>
+        {showSteps ? (
+          <>
+            <button type="button" className={styles.singleStepBtn} onClick={() => onAdjust(-15)} aria-label="Subtract 15 seconds">−15</button>
+            <button type="button" className={styles.singleStepBtn} onClick={() => onAdjust(15)} aria-label="Add 15 seconds">+15</button>
+          </>
+        ) : null}
+        <button type="button" className={styles.singleNextBtn} onClick={onNext}>
+          Next →
+        </button>
+      </div>
     </div>
   )
+}
+
+// At a round boundary, set-level rest of 0 means "no per-set rest configured"
+// — fall back to block-level (between-rounds) rest. `??` would treat explicit
+// 0 as configured and skip the fallback, so use `> 0` instead.
+function restAtBoundary(
+  isRoundBoundary: boolean,
+  setRest: number | null,
+  blockRest: number | null,
+): number {
+  if (isRoundBoundary) {
+    if (setRest != null && setRest > 0) return setRest
+    return blockRest ?? 0
+  }
+  return setRest ?? 0
+}
+
+function restForCursor(snapshot: WorkoutSnapshot, cursor: Cursor): number {
+  const entry = targetAt(snapshot, cursor)
+  if (!entry) return 0
+  const { block: b, target: t, cursor: c } = entry
+  if (b.kind === 'single') return t.rest_after_sec ?? 0
+  const bes = b.exercises.slice().sort((a, x) => a.position - x.position)
+  const lastBeIdx = bes.length - 1
+  const beAt = bes.findIndex((e) => e.position === c.blockExercisePosition)
+  const setsInRound = setsForRound(bes[beAt]!, c.roundNumber)
+  const lastSetInBe = setsInRound[setsInRound.length - 1]?.set_number === c.setNumber
+  const isRoundBoundary = lastSetInBe && beAt === lastBeIdx && c.roundNumber < b.rounds
+  return restAtBoundary(isRoundBoundary, t.rest_after_sec, b.rest_after_sec)
 }
 
 function cardNumber(snapshot: WorkoutSnapshot, cursor: Cursor) {

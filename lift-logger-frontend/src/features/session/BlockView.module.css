@@ -232,6 +232,26 @@
   color: var(--ok);
 }
 
+.singleTimerActions {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.singleStepBtn {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 var(--space-2);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.singleStepBtn:active { transform: scale(0.97); }
+
 .singleNextBtn {
   padding: var(--space-2) var(--space-4);
   min-height: 40px;
