@@ -1,4 +1,4 @@
-const { db } = require('../db');
+const { db, deleteSessionTree } = require('../db');
 
 function rowToSessionSet(r) {
   return {
@@ -226,4 +226,20 @@ function querySessionSets({
   return db.prepare(sql).all(...params).map(rowToSessionSet);
 }
 
-module.exports = { getSessionHistory, getSession, getExerciseHistory, querySessionSets };
+/**
+ * delete_session — hard-delete a session, its session_sets, and recompute
+ * exercise_prs for every exercise the deleted session touched. Refuses
+ * sessions with status='active'. Returns { id, deleted, sessionSetsDeleted,
+ * prsRecomputed }.
+ *
+ * NB: recompute step writes exercise_prs — narrow exception to the
+ * "MCP never writes exercise_prs" convention. Necessary because PR state
+ * is no longer truthful after a session delete.
+ */
+function deleteSession({ sessionId }) {
+  const result = deleteSessionTree(sessionId);
+  if (!result.deleted) throw new Error(`session not found: ${sessionId}`);
+  return { id: sessionId, ...result };
+}
+
+module.exports = { getSessionHistory, getSession, getExerciseHistory, querySessionSets, deleteSession };

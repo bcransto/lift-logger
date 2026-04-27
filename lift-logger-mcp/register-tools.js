@@ -2,9 +2,10 @@
  * Central tool registration so stdio (server.js) and HTTP (server-remote.js)
  * stay in sync. Both transports call registerTools(server).
  *
- * MCP write tools NEVER touch exercise_prs — PR computation is a sync-handler
- * concern only. Every tool uses Zod for input validation and returns a
- * JSON-stringified payload in the standard MCP text-content shape.
+ * MCP write tools touch exercise_prs ONLY from delete_session (recompute
+ * after a session delete). PR computation otherwise is a sync-handler concern.
+ * Every tool uses Zod for input validation and returns a JSON-stringified
+ * payload in the standard MCP text-content shape.
  */
 
 const { z } = require('zod');
@@ -15,7 +16,7 @@ const {
   listWorkouts, getWorkout, createWorkout, updateWorkout, deleteWorkout,
 } = require('./tools/workouts');
 const {
-  getSessionHistory, getSession, getExerciseHistory, querySessionSets,
+  getSessionHistory, getSession, getExerciseHistory, querySessionSets, deleteSession,
 } = require('./tools/sessions');
 const {
   getPRs, getVolumeSummary,
@@ -214,6 +215,19 @@ function registerTools(server) {
       limit: z.number().int().positive().max(1000).optional(),
     },
     wrap(getExerciseHistory),
+  );
+
+  server.tool(
+    'delete_session',
+    'Hard-delete a session and all its session_sets, then recompute exercise_prs ' +
+    'from remaining sessions for every exercise the deleted session touched. ' +
+    'Refuses sessions with status="active". Note: server-side delete does not ' +
+    'propagate to the iPhone Dexie mirror (sync only carries upserts) — fine ' +
+    'for cleaning up agent-created test sessions, but on-device-created sessions ' +
+    'will linger in local Dexie until manual clear (no UI impact: the frontend ' +
+    'has no completed-session list).',
+    { sessionId: z.string() },
+    wrap(deleteSession),
   );
 
   server.tool(

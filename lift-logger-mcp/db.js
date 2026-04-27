@@ -1,9 +1,10 @@
 /**
  * Shared SQLite handle for MCP tools.
  *
- * Points at the IRON database (`../lift-logger-api/data/iron.db`). MCP never
- * writes to exercise_prs — that's the sync handler's job. MCP also never
- * opens a second handle to create tables; the API server owns schema init.
+ * Points at the IRON database (`../lift-logger-api/data/iron.db`). MCP only
+ * writes exercise_prs from delete_session's recompute path; otherwise that's
+ * the sync handler's job. MCP also never opens a second handle to create
+ * tables; the API server owns schema init.
  *
  * Matches the schema in lift-logger-api/db/schema.js and the frontend types
  * in lift-logger-frontend/src/types/schema.ts.
@@ -13,7 +14,8 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
 
-const dbPath = path.join(__dirname, '..', 'lift-logger-api', 'data', 'iron.db');
+const dbPath = process.env.LIFT_LOGGER_DB_PATH
+  || path.join(__dirname, '..', 'lift-logger-api', 'data', 'iron.db');
 const db = new Database(dbPath, { readonly: false });
 
 // Concurrent-safe reads alongside the API server.
@@ -325,6 +327,160 @@ function upsertWorkoutTree(tree) {
   return readWorkoutTree(workoutId);
 }
 
+// -------------------- session delete --------------------
+
+/**
+ * Epley 1RM estimate, capped at 10 reps (matches lift-logger-api/db/database.js
+ * `estimate1RM`). Duplicated here to avoid a cross-package import.
+ */
+function estimate1RM(weight, reps) {
+  if (weight === null || weight === undefined) return null;
+  if (reps === null || reps === undefined) return null;
+  if (reps <= 0 || weight <= 0) return null;
+  const cappedReps = Math.min(reps, 10);
+  if (cappedReps === 1) return weight;
+  return weight * (1 + cappedReps / 30);
+}
+
+/**
+ * Recompute the four exercise_prs rows (weight, reps, volume, 1rm_est) for one
+ * exercise from scratch by scanning all surviving session_sets. Replaces the
+ * existing rows or deletes them if no qualifying set remains. Runs inside the
+ * caller's transaction.
+ *
+ * Returns the number of pr rows written (0..4). Counts a delete as a write
+ * since it's a state change clients should pull.
+ *
+ * NB: This is the one place in MCP that writes exercise_prs (see CLAUDE.md
+ * convention). Necessary because PR state is no longer truthful after a
+ * session delete and there's no other actor that could rebuild it.
+ */
+function recomputeExercisePRsFromScratch(exerciseId, txDb = db) {
+  const rows = txDb.prepare(`
+    SELECT actual_weight AS w, actual_reps AS r, session_id, logged_at
+    FROM session_sets
+    WHERE exercise_id = ?
+      AND actual_weight IS NOT NULL
+      AND actual_reps IS NOT NULL
+  `).all(exerciseId);
+
+  // Compute the new max for each pr_type from surviving rows.
+  const best = {
+    weight:  { value: -Infinity, weight: null, reps: null, session_id: null, achieved_at: null },
+    reps:    { value: -Infinity, weight: null, reps: null, session_id: null, achieved_at: null },
+    volume:  { value: -Infinity, weight: null, reps: null, session_id: null, achieved_at: null },
+    '1rm_est': { value: -Infinity, weight: null, reps: null, session_id: null, achieved_at: null },
+  };
+
+  for (const r of rows) {
+    const w = r.w, reps = r.r;
+    const consider = (type, val) => {
+      if (val === null || val === undefined || !(val > 0)) return;
+      if (val > best[type].value) {
+        best[type] = { value: val, weight: w, reps, session_id: r.session_id, achieved_at: r.logged_at };
+      }
+    };
+    consider('weight', w);
+    consider('reps', reps);
+    consider('volume', (w > 0 && reps > 0) ? w * reps : null);
+    consider('1rm_est', estimate1RM(w, reps));
+  }
+
+  const types = ['weight', 'reps', 'volume', '1rm_est'];
+  const now = nowMs();
+  let written = 0;
+
+  const upsertStmt = txDb.prepare(`
+    INSERT INTO exercise_prs
+      (id, exercise_id, pr_type, value, weight, reps, session_id, achieved_at, created_at, updated_at)
+    VALUES
+      (@id, @exercise_id, @pr_type, @value, @weight, @reps, @session_id, @achieved_at, @created_at, @updated_at)
+    ON CONFLICT(exercise_id, pr_type) DO UPDATE SET
+      value = @value,
+      weight = @weight,
+      reps = @reps,
+      session_id = @session_id,
+      achieved_at = @achieved_at,
+      updated_at = @updated_at
+  `);
+  const deleteStmt = txDb.prepare(
+    'DELETE FROM exercise_prs WHERE exercise_id = ? AND pr_type = ?'
+  );
+  const getExistingCreated = txDb.prepare(
+    'SELECT created_at FROM exercise_prs WHERE exercise_id = ? AND pr_type = ?'
+  );
+
+  for (const type of types) {
+    const b = best[type];
+    if (b.value === -Infinity) {
+      const info = deleteStmt.run(exerciseId, type);
+      if (info.changes > 0) written++;
+      continue;
+    }
+    const existing = getExistingCreated.get(exerciseId, type);
+    upsertStmt.run({
+      id: `pr_${exerciseId}_${type}`,
+      exercise_id: exerciseId,
+      pr_type: type,
+      value: b.value,
+      weight: b.weight,
+      reps: b.reps,
+      session_id: b.session_id,
+      achieved_at: b.achieved_at,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    });
+    written++;
+  }
+
+  return written;
+}
+
+/**
+ * Hard-delete a session and all its session_sets, then recompute PRs from
+ * remaining sessions for every exercise the deleted session touched.
+ *
+ * Refuses to delete sessions with status='active' — would yank the rug out
+ * from under a live workout.
+ *
+ * Returns { deleted, sessionSetsDeleted, prsRecomputed } or { deleted: false }
+ * if the session id doesn't exist.
+ *
+ * Note on sync: server-side hard delete does NOT propagate to the iPhone's
+ * Dexie mirror (sync only carries upserts via LWW). Acceptable for the
+ * server-side cleanup use case; the frontend has no completed-session list
+ * screen so the only visible effect is HomeScreen's "New" chip computation.
+ */
+function deleteSessionTree(sessionId) {
+  const existing = db.prepare('SELECT id, status FROM sessions WHERE id = ?').get(sessionId);
+  if (!existing) return { deleted: false, sessionSetsDeleted: 0, prsRecomputed: 0 };
+  if (existing.status === 'active') {
+    throw new Error(`cannot delete active session: ${sessionId}`);
+  }
+
+  let sessionSetsDeleted = 0;
+  let prsRecomputed = 0;
+
+  const tx = db.transaction(() => {
+    const exerciseIds = db.prepare(
+      'SELECT DISTINCT exercise_id FROM session_sets WHERE session_id = ?'
+    ).all(sessionId).map((r) => r.exercise_id);
+
+    sessionSetsDeleted = db.prepare(
+      'DELETE FROM session_sets WHERE session_id = ?'
+    ).run(sessionId).changes;
+
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+
+    for (const exId of exerciseIds) {
+      prsRecomputed += recomputeExercisePRsFromScratch(exId, db);
+    }
+  });
+  tx();
+
+  return { deleted: true, sessionSetsDeleted, prsRecomputed };
+}
+
 /**
  * Hard-delete a workout and its entire tree (blocks, block_exercises,
  * block_exercise_sets) in one transaction. Schema has no CASCADE, so we
@@ -358,4 +514,6 @@ module.exports = {
   readWorkoutTree,
   upsertWorkoutTree,
   deleteWorkoutTree,
+  deleteSessionTree,
+  recomputeExercisePRsFromScratch,
 };
