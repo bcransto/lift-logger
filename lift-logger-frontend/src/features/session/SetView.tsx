@@ -14,6 +14,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { NumberStepper } from '../../shared/components/NumberStepper'
+import { SessionHeader } from '../../shared/components/SessionHeader'
 import { TimerDock } from './TimerDock'
 import {
   cursorsEqual,
@@ -229,13 +230,9 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={styles.overlay}>
-      <header className={styles.header}>
-        <button className={styles.back} onClick={onClose}>← Back</button>
-        <div className={styles.eyebrow}>
-          EDIT SET · {indexInBlock} / {totalInBlock}
-        </div>
-        <div />
-      </header>
+      <SessionHeader backLabel="Block" onBack={onClose}>
+        EDIT SET · {indexInBlock} / {totalInBlock}
+      </SessionHeader>
 
       <TimerDock
         lastLoggedAt={(logged ?? [])

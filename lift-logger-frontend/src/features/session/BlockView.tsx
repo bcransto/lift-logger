@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
+import { SessionHeader } from '../../shared/components/SessionHeader'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
 import { cursorKey, cursorKeyFromRow, isLastSetOfBlock, isNewBlock, parseSetKey, setsForRound, targetAt } from './sessionEngine'
@@ -26,7 +27,6 @@ import { WorkSetCard } from './WorkSetCard'
 import { RestCard } from './RestCard'
 import { UndoToast } from './UndoToast'
 import { SetViewOverlay } from './SetView'
-import { WorkoutViewOverlay } from './WorkoutView'
 import { SetLogger, type SetLoggerActuals } from './SetLogger'
 import { BlockCompleteOverlay } from './BlockCompleteOverlay'
 import type {
@@ -191,8 +191,7 @@ export function BlockView() {
   }, [cursor, sessionId, snapshot, navigate])
 
   // Clear the captured block-complete position whenever the overlay variant
-  // is no longer 'blockComplete'. Lets BCO swap to WorkoutView (via
-  // openOverlay('workout')) without leaving stale state behind.
+  // is no longer 'blockComplete' so it can't leak into a future BCO mount.
   useEffect(() => {
     if (overlay !== 'blockComplete' && blockCompletePos !== null) {
       setBlockCompletePos(null)
@@ -229,6 +228,29 @@ export function BlockView() {
     }
     await endWorkout()
     navigate(`/session/${sessionId}/summary`, { replace: true })
+  }
+
+  // Block-level Skip and End share the same unlogged-set count for their
+  // confirmation copy. Skip Block = "I'll come back to this" (marks block
+  // skipped, advances). End Block = "I'm done with this block" (opens BCO).
+  const onSkipBlock = async () => {
+    const unloggedInBlock = countUnloggedInBlock(block, bes, loggedByKey)
+    const msg = unloggedInBlock > 0
+      ? `Skip this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} will be left unlogged.`
+      : 'Skip this block?'
+    if (!window.confirm(msg)) return
+    await skipBlock(block.id)
+  }
+
+  const onEndBlock = () => {
+    const unloggedInBlock = countUnloggedInBlock(block, bes, loggedByKey)
+    if (unloggedInBlock > 0) {
+      if (!window.confirm(
+        `End this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} unlogged.`,
+      )) return
+    }
+    setBlockCompletePos(block.position)
+    openOverlay('blockComplete')
   }
 
   const blockTitle = bes.map((e) => e.name).join('  +  ')
@@ -288,56 +310,33 @@ export function BlockView() {
       closeOverlay()
     }
 
-    // End Block → open BCO for the current block. Confirm if there are
-    // unlogged sets remaining in this block.
-    const onEndBlock = () => {
-      const unloggedInBlock = be.sets.filter((t) => {
-        const k = cursorKey({
-          blockPosition: block.position,
-          blockExercisePosition: be.position,
-          roundNumber: 1,
-          setNumber: t.set_number,
-        })
-        return !loggedByKey.has(k)
-      }).length
-      if (unloggedInBlock > 0) {
-        if (!window.confirm(
-          `End this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} unlogged.`,
-        )) return
-      }
-      setBlockCompletePos(block.position)
-      openOverlay('blockComplete')
-    }
-
     return (
       <div className={styles.root}>
-        <header className={styles.header}>
-          <button
-            className={styles.navBtn}
-            onClick={() => openOverlay('workout')}
-            aria-label="Workout view"
-          >
-            ☰ Workout
-          </button>
-          <div className={styles.eyebrow}>
-            LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
-          </div>
-          <button
-            className={styles.navBtn}
-            onClick={() => openOverlay('set')}
-            aria-label="Set view"
-          >
-            Set ⋮
-          </button>
-        </header>
+        <SessionHeader
+          backLabel="Workout"
+          onBack={() => session?.workout_id && navigate(`/workout/${session.workout_id}`)}
+          rightSlot={
+            <button
+              type="button"
+              className={styles.navBtn}
+              onClick={() => openOverlay('set')}
+              aria-label="Set view"
+            >
+              Set ⋮
+            </button>
+          }
+        >
+          LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
+        </SessionHeader>
 
         <h1 className={styles.display}>{blockTitle}</h1>
 
-        <div className={styles.secondaryActions}>
-          <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
-          <button className={styles.actionBtn} onClick={onEndBlock}>End Block</button>
-          <button className={styles.actionBtn} onClick={onEnd}>End Workout</button>
-        </div>
+        <SessionActions
+          onSkipSet={() => void onSkipSet()}
+          onSkipBlock={() => void onSkipBlock()}
+          onEndBlock={onEndBlock}
+          onEndWorkout={() => void onEnd()}
+        />
 
         <div className={styles.stack}>
           {be.sets.map((t) => {
@@ -387,7 +386,6 @@ export function BlockView() {
         <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
         {overlay === 'set' ? <SetViewOverlay onClose={closeOverlay} /> : null}
-        {overlay === 'workout' ? <WorkoutViewOverlay onClose={closeOverlay} /> : null}
         {overlay === 'setLogger' ? (
           <SetLogger onRecord={onSetLoggerRecord} onCancel={onSetLoggerCancel} />
         ) : null}
@@ -511,65 +509,41 @@ export function BlockView() {
     advanceCursor()
   }
 
-  // Skip the entire superset/circuit block: marks it as skipped (excludes it
-  // from "unlogged remaining" math) and advances the cursor to the next
-  // non-skipped block. Confirms first because skip is destructive — the
-  // block won't be auto-revisited.
-  const onSkipBlock = async () => {
-    const unloggedInBlock = (() => {
-      let n = 0
-      for (let r = 1; r <= block.rounds; r++) {
-        for (const be of bes) {
-          for (const t of setsForRound(be, r)) {
-            const k = cursorKey({
-              blockPosition: block.position,
-              blockExercisePosition: be.position,
-              roundNumber: r,
-              setNumber: t.set_number,
-            })
-            if (!loggedByKey.has(k)) n++
-          }
-        }
-      }
-      return n
-    })()
-    const msg = unloggedInBlock > 0
-      ? `Skip this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} will be left unlogged.`
-      : 'Skip this block?'
-    if (!window.confirm(msg)) return
-    await skipBlock(block.id)
+  // Close handler for the BCO mounted in the legacy render path (mirrors
+  // single's onBlockCompleteClose).
+  const onLegacyBlockCompleteClose = () => {
+    setBlockCompletePos(null)
+    closeOverlay()
   }
 
   return (
     <div className={styles.root}>
-      <header className={styles.header}>
-        <button
-          className={styles.navBtn}
-          onClick={() => openOverlay('workout')}
-          aria-label="Workout view"
-        >
-          ☰ Workout
-        </button>
-        <div className={styles.eyebrow}>
-          LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
-        </div>
-        <button
-          className={styles.navBtn}
-          onClick={() => openOverlay('set')}
-          aria-label="Set view"
-        >
-          Set ⋮
-        </button>
-      </header>
+      <SessionHeader
+        backLabel="Workout"
+        onBack={() => session?.workout_id && navigate(`/workout/${session.workout_id}`)}
+        rightSlot={
+          <button
+            type="button"
+            className={styles.navBtn}
+            onClick={() => openOverlay('set')}
+            aria-label="Set view"
+          >
+            Set ⋮
+          </button>
+        }
+      >
+        LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
+      </SessionHeader>
 
       <h1 className={styles.display}>{blockTitle}</h1>
       {blockKindTag ? <div className={styles.blockTag}>{blockKindTag}</div> : null}
 
-      <div className={styles.secondaryActions}>
-        <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
-        <button className={styles.actionBtn} onClick={onSkipBlock}>Skip Block</button>
-        <button className={styles.actionBtn} onClick={onEnd}>End Workout</button>
-      </div>
+      <SessionActions
+        onSkipSet={() => void onSkipSet()}
+        onSkipBlock={() => void onSkipBlock()}
+        onEndBlock={onEndBlock}
+        onEndWorkout={() => void onEnd()}
+      />
 
       <div className={styles.stack}>
         {cards.map((c, i) => {
@@ -653,12 +627,17 @@ export function BlockView() {
       <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
       {overlay === 'set' ? <SetViewOverlay onClose={closeOverlay} /> : null}
-      {overlay === 'workout' ? <WorkoutViewOverlay onClose={closeOverlay} /> : null}
       {overlay === 'setLogger' ? (
         <SetLogger
           primaryLabel="Update"
           onRecord={onSetLoggerUpdateLegacy}
           onCancel={onSetLoggerCancelLegacy}
+        />
+      ) : null}
+      {overlay === 'blockComplete' && blockCompletePos !== null ? (
+        <BlockCompleteOverlay
+          blockPosition={blockCompletePos}
+          onClose={onLegacyBlockCompleteClose}
         />
       ) : null}
     </div>
@@ -729,6 +708,55 @@ function RestWithNext({
       </div>
     </div>
   )
+}
+
+// ─── SessionActions ────────────────────────────────────────────────
+// The bottom action row on BlockView (both single + legacy paths). Four
+// fixed buttons in fixed order: Skip Set · Skip Block · End Block · End
+// Workout.
+
+function SessionActions({
+  onSkipSet,
+  onSkipBlock,
+  onEndBlock,
+  onEndWorkout,
+}: {
+  onSkipSet: () => void
+  onSkipBlock: () => void
+  onEndBlock: () => void
+  onEndWorkout: () => void
+}) {
+  return (
+    <div className={styles.secondaryActions}>
+      <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
+      <button className={styles.actionBtn} onClick={onSkipBlock}>Skip Block</button>
+      <button className={styles.actionBtn} onClick={onEndBlock}>End Block</button>
+      <button className={styles.actionBtn} onClick={onEndWorkout}>End Workout</button>
+    </div>
+  )
+}
+
+function countUnloggedInBlock(
+  block: { kind: string; position: number; rounds: number },
+  bes: SnapshotBlockExercise[],
+  loggedByKey: Map<string, SessionSetRow>,
+): number {
+  const rounds = block.kind === 'single' ? 1 : block.rounds
+  let n = 0
+  for (let r = 1; r <= rounds; r++) {
+    for (const be of bes) {
+      for (const t of setsForRound(be, r)) {
+        const k = cursorKey({
+          blockPosition: block.position,
+          blockExercisePosition: be.position,
+          roundNumber: r,
+          setNumber: t.set_number,
+        })
+        if (!loggedByKey.has(k)) n++
+      }
+    }
+  }
+  return n
 }
 
 // At a round boundary, set-level rest of 0 means "no per-set rest configured"

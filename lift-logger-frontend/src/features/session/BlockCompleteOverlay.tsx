@@ -14,7 +14,6 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
-import { useUiStore } from '../../stores/uiStore'
 import { Button } from '../../shared/components/Button'
 import { mmss } from '../../shared/utils/format'
 import { cursorKeyFromRow, firstCursorOfBlock } from './sessionEngine'
@@ -33,7 +32,6 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const appendSetToCurrentBlock = useSessionStore((s) => s.appendSetToCurrentBlock)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const endWorkout = useSessionStore((s) => s.endWorkout)
-  const { openOverlay } = useUiStore()
   const navigate = useNavigate()
 
   const session = useLiveQuery(
@@ -115,10 +113,12 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   }
 
   const onWorkoutOverview = () => {
-    // Swap the overlay variant to 'workout' — BCO unmounts, WorkoutView mounts.
-    // Intentionally do NOT call onClose() here: onClose → closeOverlay() would
-    // overwrite the variant back to null before WorkoutView ever renders.
-    openOverlay('workout')
+    // Navigate to the (now living) OverviewScreen for this workout. BCO is
+    // dismissed by the route change.
+    if (session?.workout_id) {
+      onClose()
+      navigate(`/workout/${session.workout_id}`)
+    }
   }
 
   const onFinishWorkout = async () => {

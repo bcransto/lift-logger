@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { Button } from '../../shared/components/Button'
+import { SessionHeader } from '../../shared/components/SessionHeader'
 import { RestTimerCard } from './RestTimerCard'
 import { SetCard } from './SetCard'
 import { SavePreferencePrompt } from './SavePreferencePrompt'
@@ -84,12 +85,12 @@ export function BlockIntroScreen() {
 
   return (
     <div className={styles.root}>
-      <header className={styles.header}>
-        <div className={styles.eyebrow}>
-          UP NEXT · LIFT {liftNumber} OF {totalLifts}
-        </div>
-        <div className={styles.elapsed}>{elapsed} ELAPSED</div>
-      </header>
+      <SessionHeader
+        backLabel="Workout"
+        onBack={() => session?.workout_id && navigate(`/workout/${session.workout_id}`)}
+      >
+        UP NEXT · LIFT {liftNumber} OF {totalLifts} · {elapsed} ELAPSED
+      </SessionHeader>
 
       <h1 className={styles.display}>{block.exercises[0]?.name ?? '(block)'}</h1>
       {block.kind !== 'single' ? (
