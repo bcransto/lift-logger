@@ -190,17 +190,11 @@ export function OverviewScreen() {
     // done_complete / done_partial → no-op for now (future: read-only summary).
   }
 
-  // When viewing the same workout that has the active session, the bottom
-  // "Resume Workout →" CTA is the more prominent affordance — suppress the
-  // redundant top-right Resume Block anchor on this screen.
-  const viewingActiveWorkout = activeSession?.workout_id === workoutId
-
   return (
     <div className={styles.root}>
       <SessionHeader
         backLabel="Home"
         onBack={() => navigate('/')}
-        suppressResumeAnchor={viewingActiveWorkout}
       >
         OVERVIEW · {totalLifts} {totalLifts === 1 ? 'LIFT' : 'LIFTS'}
       </SessionHeader>

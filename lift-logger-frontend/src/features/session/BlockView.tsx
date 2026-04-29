@@ -332,7 +332,7 @@ export function BlockView() {
               onClick={() => openOverlay('set')}
               aria-label="Set view"
             >
-              Set ⋮
+              Set →
             </button>
           }
         >
@@ -538,7 +538,7 @@ export function BlockView() {
             onClick={() => openOverlay('set')}
             aria-label="Set view"
           >
-            Set ⋮
+            Set →
           </button>
         }
       >

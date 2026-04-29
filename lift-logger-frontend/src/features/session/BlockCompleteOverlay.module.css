@@ -2,7 +2,13 @@
   position: fixed;
   inset: 0;
   background: var(--bg);
-  padding: var(--space-4) var(--space-4) var(--space-12);
+  /* See SetView.module.css — fixed-position overlays must handle safe-area
+     insets directly because they bypass body padding. */
+  padding:
+    max(var(--space-4), env(safe-area-inset-top))
+    max(var(--space-4), env(safe-area-inset-right))
+    max(var(--space-12), env(safe-area-inset-bottom))
+    max(var(--space-4), env(safe-area-inset-left));
   overflow-y: auto;
   display: flex;
   flex-direction: column;
