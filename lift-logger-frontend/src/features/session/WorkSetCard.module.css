@@ -91,11 +91,15 @@
   color: var(--ok);
 }
 
-.actual {
-  margin-top: var(--space-1);
+/* Small "TARGET 18 LB × 12" comparison line shown above the prominent
+   display once a set is logged. Lets the user see what was planned vs.
+   what they actually did. */
+.targetCompare {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ok);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-bottom: var(--space-1);
 }
 
 /* Record variant — 2-column row layout. Left column holds the set details,

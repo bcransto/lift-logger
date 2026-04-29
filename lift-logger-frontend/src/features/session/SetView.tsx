@@ -171,6 +171,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
         logged_at: now,
         created_at: now,
         updated_at: now,
+        skipped: 0,
       }
       await db.session_sets.put(newRow)
     }

@@ -70,6 +70,7 @@ export function BlockView() {
   const advanceCursor = useSessionStore((s) => s.advanceCursor)
   const skipRest = useSessionStore((s) => s.skipRest)
   const skipBlock = useSessionStore((s) => s.skipBlock)
+  const finishBlock = useSessionStore((s) => s.finishBlock)
   const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
   const { overlay, openOverlay, closeOverlay, showUndo } = useUiStore()
@@ -230,25 +231,34 @@ export function BlockView() {
     navigate(`/session/${sessionId}/summary`, { replace: true })
   }
 
-  // Block-level Skip and End share the same unlogged-set count for their
-  // confirmation copy. Skip Block = "I'll come back to this" (marks block
-  // skipped, advances). End Block = "I'm done with this block" (opens BCO).
+  // Block-level Skip and Finish share the same confirmation pattern:
+  // "X unlogged · Y skipped" if either count > 0, plain "Skip/Finish this
+  // block?" otherwise. Skip Block = "I'll come back to this" (marks block
+  // skipped, advances). Finish Block = "I'm done with this block — mark it
+  // complete" (adds to doneBlockIds, opens BCO).
+  const buildBlockConfirm = (verb: 'Skip' | 'Finish') => {
+    const unlogged = countUnloggedInBlock(block, bes, loggedByKey)
+    const skippedCount = (logged ?? []).filter((r) => r.block_position === block.position && r.skipped === 1).length
+    const parts: string[] = []
+    if (unlogged > 0) parts.push(`${unlogged} unlogged`)
+    if (skippedCount > 0) parts.push(`${skippedCount} skipped`)
+    return parts.length > 0
+      ? `${verb} this block? ${parts.join(' · ')}.`
+      : `${verb} this block?`
+  }
+
   const onSkipBlock = async () => {
-    const unloggedInBlock = countUnloggedInBlock(block, bes, loggedByKey)
-    const msg = unloggedInBlock > 0
-      ? `Skip this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} will be left unlogged.`
-      : 'Skip this block?'
+    const msg = buildBlockConfirm('Skip')
     if (!window.confirm(msg)) return
     await skipBlock(block.id)
   }
 
-  const onEndBlock = () => {
-    const unloggedInBlock = countUnloggedInBlock(block, bes, loggedByKey)
-    if (unloggedInBlock > 0) {
-      if (!window.confirm(
-        `End this block? ${unloggedInBlock} set${unloggedInBlock === 1 ? '' : 's'} unlogged.`,
-      )) return
+  const onFinishBlock = async () => {
+    const unlogged = countUnloggedInBlock(block, bes, loggedByKey)
+    if (unlogged > 0) {
+      if (!window.confirm(buildBlockConfirm('Finish'))) return
     }
+    await finishBlock(block.id)
     setBlockCompletePos(block.position)
     openOverlay('blockComplete')
   }
@@ -334,7 +344,7 @@ export function BlockView() {
         <SessionActions
           onSkipSet={() => void onSkipSet()}
           onSkipBlock={() => void onSkipBlock()}
-          onEndBlock={onEndBlock}
+          onFinishBlock={() => void onFinishBlock()}
           onEndWorkout={() => void onEnd()}
         />
 
@@ -541,7 +551,7 @@ export function BlockView() {
       <SessionActions
         onSkipSet={() => void onSkipSet()}
         onSkipBlock={() => void onSkipBlock()}
-        onEndBlock={onEndBlock}
+        onFinishBlock={() => void onFinishBlock()}
         onEndWorkout={() => void onEnd()}
       />
 
@@ -712,25 +722,25 @@ function RestWithNext({
 
 // ─── SessionActions ────────────────────────────────────────────────
 // The bottom action row on BlockView (both single + legacy paths). Four
-// fixed buttons in fixed order: Skip Set · Skip Block · End Block · End
+// fixed buttons in fixed order: Skip Set · Skip Block · Finish Block · End
 // Workout.
 
 function SessionActions({
   onSkipSet,
   onSkipBlock,
-  onEndBlock,
+  onFinishBlock,
   onEndWorkout,
 }: {
   onSkipSet: () => void
   onSkipBlock: () => void
-  onEndBlock: () => void
+  onFinishBlock: () => void
   onEndWorkout: () => void
 }) {
   return (
     <div className={styles.secondaryActions}>
       <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
       <button className={styles.actionBtn} onClick={onSkipBlock}>Skip Block</button>
-      <button className={styles.actionBtn} onClick={onEndBlock}>End Block</button>
+      <button className={styles.actionBtn} onClick={onFinishBlock}>Finish Block</button>
       <button className={styles.actionBtn} onClick={onEndWorkout}>End Workout</button>
     </div>
   )

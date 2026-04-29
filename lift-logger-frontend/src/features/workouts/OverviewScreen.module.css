@@ -196,16 +196,22 @@ div.blockTap {
   color: var(--accent);
   background: var(--accent-glow);
 }
-.pill_partial {
-  border-style: dashed;
+.pill_done_complete {
   border-color: rgba(139, 195, 74, 0.6);
   color: rgba(139, 195, 74, 1);
 }
-.pill_done {
-  border-color: rgba(139, 195, 74, 0.4);
-  color: rgba(139, 195, 74, 0.85);
+.pill_done_partial {
+  border-style: dashed;
+  border-color: rgba(139, 195, 74, 0.55);
+  color: rgba(139, 195, 74, 0.9);
 }
-.pill_skipped {
+.pill_skipped_empty {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  background: rgba(255, 194, 31, 0.08);
+}
+.pill_skipped_partial {
+  border-style: dashed;
   border-color: var(--accent-2);
   color: var(--accent-2);
   background: rgba(255, 194, 31, 0.08);
@@ -215,16 +221,16 @@ div.blockTap {
 }
 
 /* Block-level status decorations layer onto the tile container. */
-.status_current { /* accent-tinted */ }
 .status_current .blockTap {
   background: var(--accent-glow);
   border-radius: var(--radius-sm);
   padding: var(--space-2);
   margin: calc(var(--space-2) * -1);
 }
-.status_done .blockTap { opacity: 0.65; }
-.status_skipped .blockTap { opacity: 0.55; }
-.status_partial { /* dashed pill conveys it; no extra decoration */ }
+.status_done_complete .blockTap { opacity: 0.65; }
+.status_done_partial .blockTap { opacity: 0.7; }
+.status_skipped_empty .blockTap { opacity: 0.55; }
+.status_skipped_partial .blockTap { opacity: 0.6; }
 .status_pending { /* default */ }
 
 .blockTap:active { transform: scale(0.99); }

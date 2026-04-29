@@ -18,6 +18,7 @@ import {
   firstCursor,
   firstUnloggedCursorInBlock,
   iterateSets,
+  setsForRound,
 } from '../features/session/sessionEngine'
 import { IDLE_TIMER, type TimerKind, type TimerSnapshot } from '../features/timer/TimerService'
 import type {
@@ -104,6 +105,9 @@ export type SessionState = {
   // Phase 2 state
   pausedAt: number | null
   skippedBlockIds: Set<string>
+  // schema v4 — block ids the user has explicitly Finished. Mutually
+  // exclusive with skippedBlockIds per id (advancing flips between them).
+  doneBlockIds: Set<string>
   accumulatedPausedMs: number
   pendingActuals: PendingActuals | null
 
@@ -127,6 +131,7 @@ export type SessionState = {
   skipCurrentSet: () => Promise<{ undoCursor: Cursor } | null>
   undoSkip: (cursor: Cursor) => void
   skipBlock: (blockId: string) => Promise<void>
+  finishBlock: (blockId: string) => Promise<void>
   returnToBlock: (blockId: string) => Promise<void>
   endWorkout: (notes?: string | null) => Promise<void>
   setPendingActuals: (patch: PendingActuals | null) => Promise<void>
@@ -271,6 +276,53 @@ function parseSkippedBlocks(raw: string | null): Set<string> {
   }
 }
 
+// Same shape as parseSkippedBlocks; kept distinct for self-documenting call sites.
+function parseDoneBlocks(raw: string | null): Set<string> {
+  return parseSkippedBlocks(raw)
+}
+
+function serializeBlockIds(ids: ReadonlySet<string>): string | null {
+  return ids.size > 0 ? JSON.stringify([...ids]) : null
+}
+
+function unionBlockIds(a: ReadonlySet<string>, b: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>()
+  for (const id of a) out.add(id)
+  for (const id of b) out.add(id)
+  return out
+}
+
+// Returns true if every set in the named block has a non-skipped session_set.
+// Used by logSet to auto-flip a block to Done & Complete on the last log.
+async function isBlockFullyLogged(
+  sessionId: string,
+  snapshot: WorkoutSnapshot,
+  blockPosition: number,
+): Promise<boolean> {
+  const blk = snapshot.blocks.find((b) => b.position === blockPosition)
+  if (!blk) return false
+  const rows = await db.session_sets
+    .where('session_id').equals(sessionId)
+    .filter((r) => r.block_position === blockPosition && r.skipped !== 1)
+    .toArray()
+  const covered = new Set(rows.map(cursorKeyFromRow))
+  const rounds = blk.kind === 'single' ? 1 : blk.rounds
+  for (let r = 1; r <= rounds; r++) {
+    for (const be of blk.exercises) {
+      for (const t of setsForRound(be, r)) {
+        const k = cursorKey({
+          blockPosition: blk.position,
+          blockExercisePosition: be.position,
+          roundNumber: r,
+          setNumber: t.set_number,
+        })
+        if (!covered.has(k)) return false
+      }
+    }
+  }
+  return true
+}
+
 function parsePendingActuals(raw: string | null): PendingActuals | null {
   if (!raw) return null
   try {
@@ -295,6 +347,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   // Phase 2 state — initialized empty; populated by hydrate + actions.
   pausedAt: null,
   skippedBlockIds: new Set<string>(),
+  doneBlockIds: new Set<string>(),
   accumulatedPausedMs: 0,
   pendingActuals: null,
   restSkippedAt: null,
@@ -315,6 +368,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
     const logged = await db.session_sets.where('session_id').equals(active.id).toArray()
     const skippedBlockIds = parseSkippedBlocks(active.skipped_block_ids)
+    const doneBlockIds = parseDoneBlocks(active.done_block_ids)
     set({
       sessionId: active.id,
       snapshot,
@@ -326,6 +380,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       hydrated: true,
       pausedAt: active.paused_at,
       skippedBlockIds,
+      doneBlockIds,
       accumulatedPausedMs: active.accumulated_paused_ms ?? 0,
       pendingActuals: parsePendingActuals(active.pending_actuals),
     })
@@ -355,6 +410,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       work_timer_duration_sec: null,
       accumulated_paused_ms: null,
       pending_actuals: null,
+      // schema v4
+      done_block_ids: null,
     }
     await db.sessions.put(row)
     // Mark workout.last_performed for Home sort ordering.
@@ -373,6 +430,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       hydrated: true,
       pausedAt: null,
       skippedBlockIds: new Set<string>(),
+      doneBlockIds: new Set<string>(),
       accumulatedPausedMs: 0,
       pendingActuals: null,
     })
@@ -458,16 +516,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       logged_at: existing?.logged_at ?? now, // preserve original log time on edit
       created_at: existing?.created_at ?? now,
       updated_at: now,
+      // logSet always writes an actual log; if a prior skipped row exists,
+      // overwrite the flag so the row's state matches the user's new intent.
+      skipped: 0,
     }
     await db.session_sets.put(row)
 
+    // Auto-finish: if every set in this block now has a non-skipped log row,
+    // flip the block to Done & Complete without requiring a Finish tap.
+    const { doneBlockIds } = get()
+    let nextDoneBlockIds = doneBlockIds
+    const blk = snapshot.blocks.find((b) => b.position === cursor.blockPosition)
+    if (blk && !doneBlockIds.has(blk.id) && await isBlockFullyLogged(sessionId, snapshot, blk.position)) {
+      nextDoneBlockIds = new Set([...doneBlockIds, blk.id])
+    }
+
     const shouldAdvance = input?.advance !== false
-    const next = shouldAdvance ? advance(snapshot, cursor, skippedBlockIds) : cursor
+    const excluded = unionBlockIds(skippedBlockIds, nextDoneBlockIds)
+    const next = shouldAdvance ? advance(snapshot, cursor, excluded) : cursor
     const ses = await db.sessions.get(sessionId)
     if (ses) {
       await db.sessions.put({
         ...ses,
         pending_actuals: null, // consumed by this log
+        done_block_ids: serializeBlockIds(nextDoneBlockIds),
         updated_at: now,
       })
     }
@@ -476,6 +548,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       loggedCount: existing ? get().loggedCount : get().loggedCount + 1,
       timer: IDLE_TIMER,
       pendingActuals: null,
+      doneBlockIds: nextDoneBlockIds,
       restSkippedAt: null, // a fresh log resets any skipped-rest flag
     })
   },
@@ -571,6 +644,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       loggedCount: 0,
       pausedAt: null,
       skippedBlockIds: new Set(),
+      doneBlockIds: new Set(),
       accumulatedPausedMs: 0,
       pendingActuals: null,
     })
@@ -610,11 +684,51 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   async skipCurrentSet() {
-    const { sessionId, snapshot, cursor, skippedBlockIds } = get()
+    const { sessionId, snapshot, cursor, skippedBlockIds, doneBlockIds } = get()
     if (!sessionId || !snapshot || !cursor) return null
     const undoCursor = cursor
-    const next = advance(snapshot, cursor, skippedBlockIds)
+    // Persist the skip as a session_set row (skipped=1 + null actuals) so the
+    // unlogged-count math can distinguish deliberate skips from forgotten sets.
+    const entry = [...iterateSets(snapshot)].find((e) => cursorsEqual(e.cursor, cursor))
     const now = Date.now()
+    if (entry) {
+      const existing = await db.session_sets
+        .where('[session_id+block_position+block_exercise_position+round_number+set_number]')
+        .equals([
+          sessionId,
+          cursor.blockPosition,
+          cursor.blockExercisePosition,
+          cursor.roundNumber,
+          cursor.setNumber,
+        ])
+        .first()
+      const row: SessionSetRow = {
+        id: (existing?.id ?? uuid('ss')) as SessionSetId,
+        session_id: sessionId,
+        exercise_id: entry.blockExercise.exercise_id as ExerciseId,
+        block_position: cursor.blockPosition,
+        block_exercise_position: cursor.blockExercisePosition,
+        round_number: cursor.roundNumber,
+        set_number: cursor.setNumber,
+        target_weight: entry.target.target_weight ?? null,
+        target_reps: entry.target.target_reps ?? null,
+        target_duration_sec: entry.target.target_duration_sec ?? null,
+        actual_weight: null,
+        actual_reps: null,
+        actual_duration_sec: null,
+        rpe: null,
+        rest_taken_sec: null,
+        is_pr: 0,
+        was_swapped: existing?.was_swapped ?? 0,
+        logged_at: existing?.logged_at ?? now,
+        created_at: existing?.created_at ?? now,
+        updated_at: now,
+        skipped: 1,
+      }
+      await db.session_sets.put(row)
+    }
+    const excluded = unionBlockIds(skippedBlockIds, doneBlockIds)
+    const next = advance(snapshot, cursor, excluded)
     const ses = await db.sessions.get(sessionId)
     if (ses) {
       await db.sessions.put({
@@ -634,25 +748,53 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   async skipBlock(blockId) {
-    const { sessionId, snapshot, skippedBlockIds } = get()
+    const { sessionId, snapshot, skippedBlockIds, doneBlockIds } = get()
     if (!sessionId || !snapshot) return
     const nextSkipped = new Set(skippedBlockIds)
     nextSkipped.add(blockId)
-    // Find the next non-skipped block's first cursor.
+    // Skip and Done are mutually exclusive — flipping to skipped clears done.
+    const nextDone = new Set(doneBlockIds)
+    nextDone.delete(blockId)
     const cur = get().cursor
-    const nextCursor = cur ? advance(snapshot, cur, nextSkipped) : null
+    const nextCursor = cur ? advance(snapshot, cur, unionBlockIds(nextSkipped, nextDone)) : null
     const now = Date.now()
     const ses = await db.sessions.get(sessionId)
     if (ses) {
       await db.sessions.put({
         ...ses,
         skipped_block_ids: JSON.stringify([...nextSkipped]),
+        done_block_ids: serializeBlockIds(nextDone),
         work_timer_started_at: null,
         work_timer_duration_sec: null,
         updated_at: now,
       })
     }
-    set({ skippedBlockIds: nextSkipped, cursor: nextCursor, timer: IDLE_TIMER })
+    set({ skippedBlockIds: nextSkipped, doneBlockIds: nextDone, cursor: nextCursor, timer: IDLE_TIMER })
+  },
+
+  async finishBlock(blockId) {
+    const { sessionId, snapshot, skippedBlockIds, doneBlockIds } = get()
+    if (!sessionId || !snapshot) return
+    const nextDone = new Set(doneBlockIds)
+    nextDone.add(blockId)
+    // Done and Skipped are mutually exclusive — flipping to done clears skip.
+    const nextSkipped = new Set(skippedBlockIds)
+    nextSkipped.delete(blockId)
+    const cur = get().cursor
+    const nextCursor = cur ? advance(snapshot, cur, unionBlockIds(nextSkipped, nextDone)) : null
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        skipped_block_ids: nextSkipped.size > 0 ? JSON.stringify([...nextSkipped]) : null,
+        done_block_ids: serializeBlockIds(nextDone),
+        work_timer_started_at: null,
+        work_timer_duration_sec: null,
+        updated_at: now,
+      })
+    }
+    set({ skippedBlockIds: nextSkipped, doneBlockIds: nextDone, cursor: nextCursor, timer: IDLE_TIMER })
   },
 
   async returnToBlock(blockId) {
@@ -785,9 +927,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
    * the user has rested.
    */
   advanceCursor() {
-    const { snapshot, cursor, skippedBlockIds } = get()
+    const { snapshot, cursor, skippedBlockIds, doneBlockIds } = get()
     if (!snapshot || !cursor) return
-    const next = advance(snapshot, cursor, skippedBlockIds)
+    const next = advance(snapshot, cursor, unionBlockIds(skippedBlockIds, doneBlockIds))
     set({ cursor: next })
   },
 

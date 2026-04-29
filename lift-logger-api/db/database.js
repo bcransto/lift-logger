@@ -77,13 +77,17 @@ const TABLE_COLUMNS = {
     // v2 additions (Phase 2)
     'paused_at', 'skipped_block_ids',
     'work_timer_started_at', 'work_timer_duration_sec',
-    'accumulated_paused_ms', 'pending_actuals'
+    'accumulated_paused_ms', 'pending_actuals',
+    // v4
+    'done_block_ids'
   ],
   session_sets: [
     'session_id', 'exercise_id', 'block_position', 'block_exercise_position',
     'round_number', 'set_number', 'target_weight', 'target_reps',
     'target_duration_sec', 'actual_weight', 'actual_reps', 'actual_duration_sec',
-    'rpe', 'rest_taken_sec', 'is_pr', 'was_swapped', 'logged_at', 'created_at'
+    'rpe', 'rest_taken_sec', 'is_pr', 'was_swapped', 'logged_at', 'created_at',
+    // v4
+    'skipped'
   ],
   exercise_prs: [
     'exercise_id', 'pr_type', 'value', 'reps', 'weight',
@@ -150,6 +154,11 @@ function normalizeRow(table, row) {
   // pushes land cleanly without a coordinated deploy.
   if (table === 'block_exercise_sets' && (out.round_number === null || out.round_number === undefined)) {
     out.round_number = 1;
+  }
+  // session_sets.skipped was added in v4 and is NOT NULL. Older clients omit
+  // the field; default to 0 (= "this is an actual log, not a skip").
+  if (table === 'session_sets' && (out.skipped === null || out.skipped === undefined)) {
+    out.skipped = 0;
   }
   return out;
 }

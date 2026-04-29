@@ -123,6 +123,9 @@ export type SessionRow = {
   work_timer_duration_sec: number | null
   accumulated_paused_ms: number | null // treat null as 0
   pending_actuals: string | null // JSON of PendingActuals
+  // schema v4 — blocks the user explicitly Finished (regardless of whether
+  // every set was logged). Mutually exclusive with skipped_block_ids per id.
+  done_block_ids: string | null // JSON array of block ids
 }
 
 // Phase 2: stash for Set-view edits on the focused set. Applied to session_sets on logSet.
@@ -155,6 +158,9 @@ export type SessionSetRow = {
   logged_at: number
   created_at: number
   updated_at: number
+  // schema v4 — Skip Set writes a row with skipped=1 + null actuals so the
+  // unlogged-count math can distinguish deliberate skips from forgotten sets.
+  skipped: Bool01
 }
 
 export type ExercisePrRow = {

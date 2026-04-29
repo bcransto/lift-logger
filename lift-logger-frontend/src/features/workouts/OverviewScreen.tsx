@@ -17,7 +17,18 @@ import { parseJsonArray, relativeDate } from '../../shared/utils/format'
 import type { Cursor, SessionSetRow, SnapshotBlock, WorkoutSnapshot } from '../../types/schema'
 import styles from './OverviewScreen.module.css'
 
-type BlockStatus = 'pending' | 'current' | 'partial' | 'done' | 'skipped'
+// 5-state model (per design convo), plus 'current' as a transient cursor
+// indicator. Disposition × Content:
+//   done   × complete | partial    — block was Finished (auto on full log, or via Finish tap)
+//   skipped × empty   | partial    — block was Skipped (will return)
+//   untouched (== pending)         — never started, no disposition
+type BlockStatus =
+  | 'pending'
+  | 'current'
+  | 'done_complete'
+  | 'done_partial'
+  | 'skipped_empty'
+  | 'skipped_partial'
 
 export function OverviewScreen() {
   const { workoutId } = useParams<{ workoutId: string }>()
@@ -28,6 +39,7 @@ export function OverviewScreen() {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const cursor = useSessionStore((s) => s.cursor)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
+  const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
 
   const workout = useLiveQuery(() => (workoutId ? db.workouts.get(workoutId) : undefined), [workoutId])
 
@@ -80,8 +92,12 @@ export function OverviewScreen() {
     [snapshot],
   )
 
-  const loggedKeys = useMemo(
-    () => new Set((logged ?? []).map(cursorKeyFromRow)),
+
+  // Set of cursor keys that have an *actual* log row (skipped:0). Skipped
+  // rows are excluded from the "done" count because they don't represent
+  // completed work — they're a different disposition.
+  const loggedActualKeys = useMemo(
+    () => new Set((logged ?? []).filter((r) => r.skipped !== 1).map(cursorKeyFromRow)),
     [logged],
   )
 
@@ -103,18 +119,25 @@ export function OverviewScreen() {
             roundNumber: r,
             setNumber: t.set_number,
           })
-          if (loggedKeys.has(k)) done++
+          if (loggedActualKeys.has(k)) done++
         }
       }
     }
     if (!activeSession) return { status: 'pending', done, total }
-    let status: BlockStatus
-    if (skippedBlockIds.has(block.id)) status = 'skipped'
-    else if (done >= total && total > 0) status = 'done'
-    else if (cursor && cursor.blockPosition === block.position) status = 'current'
-    else if (done > 0) status = 'partial'
-    else status = 'pending'
-    return { status, done, total }
+    // Cursor wins as "current" only if the block has no explicit disposition
+    // yet — once Skipped or Done is set, we want the user-meaningful status.
+    const hasLogs = done > 0
+    if (skippedBlockIds.has(block.id)) {
+      return { status: hasLogs ? 'skipped_partial' : 'skipped_empty', done, total }
+    }
+    if (doneBlockIds.has(block.id)) {
+      return { status: done >= total && total > 0 ? 'done_complete' : 'done_partial', done, total }
+    }
+    // Auto-Done: all sets logged → Complete (logSet flips this in the store
+    // too, but renders correctly even if hydration hasn't caught up).
+    if (done >= total && total > 0) return { status: 'done_complete', done, total }
+    if (cursor && cursor.blockPosition === block.position) return { status: 'current', done, total }
+    return { status: 'pending', done, total }
   }
 
   const onStart = async () => {
@@ -147,17 +170,10 @@ export function OverviewScreen() {
       navigateToCursor(sid, cursor)
       return
     }
-    if (status === 'skipped') {
+    if (status === 'skipped_empty' || status === 'skipped_partial') {
+      // Re-entering an explicitly-skipped block: un-skip + run intro ceremony.
       await returnToBlock(block.id)
       navigate(`/session/${sid}/intro/${block.position}`)
-      return
-    }
-    if (status === 'partial') {
-      // returnToBlock no-ops on the skip set but still lands on first unlogged.
-      await returnToBlock(block.id)
-      const c = useSessionStore.getState().cursor
-      if (c) navigateToCursor(sid, c)
-      else navigate(`/session/${sid}/intro/${block.position}`)
       return
     }
     if (status === 'pending') {
@@ -171,7 +187,7 @@ export function OverviewScreen() {
       navigate(`/session/${sid}/intro/${block.position}`)
       return
     }
-    // status === 'done' → no-op (future: read-only summary).
+    // done_complete / done_partial → no-op for now (future: read-only summary).
   }
 
   // When viewing the same workout that has the active session, the bottom
@@ -314,9 +330,10 @@ function statusLabel(status: BlockStatus): string {
   switch (status) {
     case 'pending': return 'PENDING'
     case 'current': return 'CURRENT'
-    case 'partial': return 'PARTIAL'
-    case 'done': return 'DONE'
-    case 'skipped': return 'SKIPPED'
+    case 'done_complete': return 'DONE'
+    case 'done_partial': return 'DONE'
+    case 'skipped_empty': return 'SKIPPED'
+    case 'skipped_partial': return 'SKIPPED'
   }
 }
 

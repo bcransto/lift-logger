@@ -6,7 +6,7 @@
  * auto-init that happens when requiring database.js.
  */
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 const MIGRATIONS = [
   // v1 is the baseline covered by schema.js; no-op migration body, just records the version.
@@ -119,6 +119,23 @@ const MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_bes_be ON block_exercise_sets(block_exercise_id, round_number, set_number);
         CREATE INDEX IF NOT EXISTS idx_bes_updated ON block_exercise_sets(updated_at);
       `);
+    }
+  },
+  // v4 — add per-set skipped flag + per-block done-flag JSON to support the
+  // 5-state tile model on OverviewScreen (done/complete, done/partial,
+  // skipped/empty, skipped/partial, untouched). Idempotent: skips columns
+  // that already exist.
+  {
+    version: 4,
+    up(database) {
+      const ssCols = database.prepare('PRAGMA table_info(session_sets)').all();
+      if (!ssCols.some((c) => c.name === 'skipped')) {
+        database.exec('ALTER TABLE session_sets ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0');
+      }
+      const sCols = database.prepare('PRAGMA table_info(sessions)').all();
+      if (!sCols.some((c) => c.name === 'done_block_ids')) {
+        database.exec('ALTER TABLE sessions ADD COLUMN done_block_ids TEXT');
+      }
     }
   }
 ];

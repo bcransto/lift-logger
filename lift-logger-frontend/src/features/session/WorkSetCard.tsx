@@ -86,6 +86,19 @@ export function WorkSetCard({
 
   const showInlineCounter = timerRunning && target.target_reps == null
 
+  const isSkipped = actual?.skipped === 1
+  // After a set is logged, the prominent display flips to the actuals — the
+  // user is reviewing what they did, not what was planned. Target moves to a
+  // small "TARGET …" line above for comparison.
+  const showActualProminent = isDone && Boolean(actual) && !isSkipped
+  const actualWeightDisplay =
+    actual?.actual_weight != null ? `${actual.actual_weight} LB` : weightDisplay
+  const actualRepsDisplay =
+    actual?.actual_reps != null
+      ? `× ${actual.actual_reps}`
+      : actual?.actual_duration_sec != null
+        ? `${actual.actual_duration_sec}s`
+        : repsDisplay
   const body = (
     <>
       {showExName ? <div className={styles.exName}>{beName}</div> : null}
@@ -93,10 +106,17 @@ export function WorkSetCard({
         SET {target.set_number}
         {round != null && totalRounds != null ? ` · R${round}/${totalRounds}` : ''}
         {target.is_peak ? ' ★' : ''}
-        {isFocused ? ' · NOW' : isDone ? ' ✓' : ''}
+        {isFocused ? ' · NOW' : isSkipped ? ' · SKIPPED' : isDone ? ' ✓' : ''}
       </div>
+      {showActualProminent ? (
+        <div className={styles.targetCompare}>
+          TARGET {weightDisplay} {repsDisplay}
+        </div>
+      ) : null}
       <div className={styles.values}>
-        <span className={styles.weight}>{weightDisplay}</span>
+        <span className={styles.weight}>
+          {showActualProminent ? actualWeightDisplay : weightDisplay}
+        </span>
         {showInlineCounter ? (
           <InlineCountdown
             startedAt={workTimerStartedAt!}
@@ -104,16 +124,11 @@ export function WorkSetCard({
             onZero={onTimerZero}
           />
         ) : (
-          <span className={styles.reps}>{repsDisplay}</span>
+          <span className={styles.reps}>
+            {showActualProminent ? actualRepsDisplay : repsDisplay}
+          </span>
         )}
       </div>
-      {isDone && actual ? (
-        <div className={styles.actual}>
-          Actual: {actual.actual_weight ?? '—'}
-          {' · '}
-          {actual.actual_reps ?? actual.actual_duration_sec ?? '—'}
-        </div>
-      ) : null}
     </>
   )
   if (showFocusedActions) {
