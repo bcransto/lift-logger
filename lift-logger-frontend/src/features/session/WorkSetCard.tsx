@@ -60,6 +60,27 @@ export function WorkSetCard({
     !isDone &&
     workTimerStartedAt != null &&
     workTimerDurationSec != null
+
+  // Go!/Done button-label timer. When a focused, rep-based set first becomes
+  // active, the button reads "Go!" for 10s as a get-ready prompt, then flips
+  // to "Done" once the user is presumably mid- or post-set. Both states are
+  // tappable and open the same SetLogger flow — purely a text affordance.
+  // Timed sets (target_duration_sec set) opt out: their auto-log loop owns
+  // the rhythm and we don't want two competing prompts.
+  const goDoneActive = isFocused && !isDone && !isTimed
+  // Lazy useState init so the first render already has the timestamp;
+  // useEffect resets it on subsequent goDoneActive transitions (e.g., undo
+  // brings focus back to a card that previously lost it).
+  const [focusedAt, setFocusedAt] = useState<number | null>(() =>
+    goDoneActive ? Date.now() : null,
+  )
+  useEffect(() => {
+    setFocusedAt(goDoneActive ? Date.now() : null)
+  }, [goDoneActive])
+  const [, tickGoDone] = useCounter()
+  useTick(goDoneActive, tickGoDone, 1000)
+  const goDoneLabel =
+    focusedAt != null && Date.now() - focusedAt < 10_000 ? 'Go!' : 'Done'
   const cls = [
     styles.card,
     isFocused ? styles.focused : '',
@@ -132,25 +153,25 @@ export function WorkSetCard({
     </>
   )
   if (showFocusedActions) {
-    // 2-column layout: body on the left, single Done button on the right.
+    // 2-column layout: body on the left, single Go!/Done button on the right.
     // The button opens SetLogger so the user can confirm target values or
     // modify them before committing. The card body itself is not interactive.
     return (
       <div className={cls}>
         <div className={styles.cardBody}>{body}</div>
         <button type="button" className={styles.doneBtn} onClick={onDone}>
-          Done
+          {goDoneActive ? goDoneLabel : 'Done'}
         </button>
       </div>
     )
   }
   if (onRecord) {
-    // 2-column layout: body on the left, Record button on the right.
+    // 2-column layout: body on the left, Go!/Done button on the right.
     return (
       <div className={cls}>
         <div className={styles.cardBody}>{body}</div>
         <button type="button" className={styles.recordBtn} onClick={onRecord}>
-          Record
+          {goDoneActive ? goDoneLabel : 'Record'}
         </button>
       </div>
     )
