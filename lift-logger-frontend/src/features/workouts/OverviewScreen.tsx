@@ -7,6 +7,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { Button } from '../../shared/components/Button'
 import { SessionHeader } from '../../shared/components/SessionHeader'
 import { SetPatternRenderer } from './SetPatternRenderer'
+import { confirmEndWorkout } from '../session/BlockView'
 import {
   cursorKey,
   cursorKeyFromRow,
@@ -40,6 +41,7 @@ export function OverviewScreen() {
   const cursor = useSessionStore((s) => s.cursor)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
   const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
+  const endWorkout = useSessionStore((s) => s.endWorkout)
 
   const workout = useLiveQuery(() => (workoutId ? db.workouts.get(workoutId) : undefined), [workoutId])
 
@@ -150,6 +152,17 @@ export function OverviewScreen() {
     navigateToCursor(activeSession.id, cursor)
   }
 
+  // When the cursor has run off the end (all non-skipped blocks done) but
+  // skipped blocks still exist, the user is parked on Overview. Their two
+  // exits are: tap a skipped tile to revisit, or tap the bottom CTA to end
+  // the workout. The CTA below flips into "End Workout" for this state.
+  const onEndFromOverview = async () => {
+    if (!activeSession || !snapshot) return
+    if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
+    await endWorkout()
+    navigate(`/session/${activeSession.id}/summary`, { replace: true })
+  }
+
   // Tile tap dispatch — depends on status.
   //   active   → /active (no ceremony, you were there)
   //   skipped  → returnToBlock + /intro (re-entering)
@@ -227,13 +240,17 @@ export function OverviewScreen() {
       </ol>
 
       <div className={styles.startRow}>
-        {activeSession ? (
+        {!activeSession ? (
+          <Button variant="primary" block onClick={onStart}>
+            Start Workout →
+          </Button>
+        ) : cursor ? (
           <Button variant="primary" block onClick={onResume}>
             Resume Workout →
           </Button>
         ) : (
-          <Button variant="primary" block onClick={onStart}>
-            Start Workout →
+          <Button variant="primary" block onClick={() => void onEndFromOverview()}>
+            End Workout
           </Button>
         )}
       </div>

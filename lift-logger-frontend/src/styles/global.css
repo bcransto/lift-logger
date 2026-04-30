@@ -107,3 +107,31 @@ a {
   line-height: 1;
   letter-spacing: -0.02em;
 }
+
+/* Portrait-only enforcement. The PWA manifest declares orientation=portrait
+   and App.tsx attempts screen.orientation.lock('portrait'), but iOS Safari
+   honors neither. As a hard fallback, when the viewport is landscape AND
+   short (i.e. a phone — desktop landscape views are tall), overlay a
+   "rotate to portrait" notice so the broken layout doesn't render
+   underneath. The viewport meta + PWA manifest still drive the platforms
+   that DO honor the hint; this overlay catches the rest. */
+.rotateOverlay {
+  display: none;
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  .rotateOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-8);
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 22px;
+    line-height: 1.3;
+  }
+}

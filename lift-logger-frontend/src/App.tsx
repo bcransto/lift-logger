@@ -5,6 +5,10 @@ import { useSessionStore } from './stores/sessionStore'
 import { useWakeLock } from './shared/hooks/useWakeLock'
 import styles from './App.module.css'
 
+type ScreenWithLock = Screen & {
+  orientation?: ScreenOrientation & { lock?: (kind: 'portrait') => Promise<void> }
+}
+
 export function App() {
   const hydrate = useSessionStore((s) => s.hydrate)
   const sessionId = useSessionStore((s) => s.sessionId)
@@ -13,6 +17,14 @@ export function App() {
   useEffect(() => {
     void hydrate()
   }, [hydrate])
+
+  // Best-effort screen orientation lock. Works on Android PWAs in standalone
+  // mode; iOS Safari rejects (no support yet) — the CSS rotateOverlay below
+  // handles iOS as a fallback. Promise rejection is silent.
+  useEffect(() => {
+    const s = screen as ScreenWithLock
+    s.orientation?.lock?.('portrait').catch(() => undefined)
+  }, [])
 
   useWakeLock(sessionId !== null)
 
@@ -25,6 +37,9 @@ export function App() {
         <Outlet />
       </main>
       {!inSession ? <TabBar /> : null}
+      <div className="rotateOverlay" aria-hidden>
+        Please rotate to portrait
+      </div>
     </div>
   )
 }

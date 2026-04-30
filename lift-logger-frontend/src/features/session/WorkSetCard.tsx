@@ -152,6 +152,10 @@ export function WorkSetCard({
       </div>
     </>
   )
+  // While the prep timer is in its "Go!" phase, paint the button green to
+  // signal "now's the time to lift". Falls back to the accent color once the
+  // label flips to "Done" (or for static labels on timed sets / pre-Go state).
+  const isGoState = goDoneActive && goDoneLabel === 'Go!'
   if (showFocusedActions) {
     // 2-column layout: body on the left, single Go!/Done button on the right.
     // The button opens SetLogger so the user can confirm target values or
@@ -159,7 +163,11 @@ export function WorkSetCard({
     return (
       <div className={cls}>
         <div className={styles.cardBody}>{body}</div>
-        <button type="button" className={styles.doneBtn} onClick={onDone}>
+        <button
+          type="button"
+          className={`${styles.doneBtn} ${isGoState ? styles.goBtn : ''}`}
+          onClick={onDone}
+        >
           {goDoneActive ? goDoneLabel : 'Done'}
         </button>
       </div>
@@ -170,7 +178,11 @@ export function WorkSetCard({
     return (
       <div className={cls}>
         <div className={styles.cardBody}>{body}</div>
-        <button type="button" className={styles.recordBtn} onClick={onRecord}>
+        <button
+          type="button"
+          className={`${styles.recordBtn} ${isGoState ? styles.goBtn : ''}`}
+          onClick={onRecord}
+        >
           {goDoneActive ? goDoneLabel : 'Record'}
         </button>
       </div>

@@ -184,12 +184,20 @@ export function BlockView() {
     return () => { cancelled = true }
   }, [sessionId, cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber])
 
-  // Workout complete: cursor becomes null after the final logSet advance.
+  // Cursor becomes null after the final logSet advance — usually meaning
+  // the workout is done. EXCEPTION: if the user explicitly Skipped any
+  // blocks, those are still pending in their mind. Route to OverviewScreen
+  // so they can see skipped tiles + decide to resume one or end the workout
+  // instead of being silently shoved into the summary.
   useEffect(() => {
     if (sessionId && snapshot && !cursor) {
-      navigate(`/session/${sessionId}/summary`, { replace: true })
+      if (skippedBlockIds.size > 0 && session?.workout_id) {
+        navigate(`/workout/${session.workout_id}`, { replace: true })
+      } else {
+        navigate(`/session/${sessionId}/summary`, { replace: true })
+      }
     }
-  }, [cursor, sessionId, snapshot, navigate])
+  }, [cursor, sessionId, snapshot, navigate, skippedBlockIds, session])
 
   // Clear the captured block-complete position whenever the overlay variant
   // is no longer 'blockComplete' so it can't leak into a future BCO mount.
@@ -221,12 +229,7 @@ export function BlockView() {
   }
 
   const onEnd = async () => {
-    const unloggedRemaining = countUnloggedInNonSkippedBlocks(snapshot, logged ?? [], skippedBlockIds)
-    if (unloggedRemaining > 0) {
-      if (!window.confirm(
-        `Finish workout? You have ${unloggedRemaining} unlogged set${unloggedRemaining === 1 ? '' : 's'}.`,
-      )) return
-    }
+    if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
     await endWorkout()
     navigate(`/session/${sessionId}/summary`, { replace: true })
   }
@@ -330,9 +333,9 @@ export function BlockView() {
               type="button"
               className={styles.navBtn}
               onClick={() => openOverlay('set')}
-              aria-label="Set view"
+              aria-label="Sets view"
             >
-              Set →
+              Sets →
             </button>
           }
         >
@@ -536,9 +539,9 @@ export function BlockView() {
             type="button"
             className={styles.navBtn}
             onClick={() => openOverlay('set')}
-            aria-label="Set view"
+            aria-label="Sets view"
           >
-            Set →
+            Sets →
           </button>
         }
       >
@@ -820,6 +823,26 @@ function cardNumber(snapshot: WorkoutSnapshot, cursor: Cursor) {
     }
   }
   return { current: hit || 1, total: Math.max(1, total) }
+}
+
+// Shared end-workout confirm. Surfaces both the unlogged-set count (only in
+// non-skipped blocks — skipped sets aren't "left undone") AND the count of
+// blocks the user explicitly Skipped earlier. Skipped blocks are pending in
+// the user's intent and shouldn't be quietly abandoned by an end-workout
+// tap (or by the auto-done on the last block — see BlockView's cursor-null
+// effect, which routes to Overview when skipped blocks remain).
+export function confirmEndWorkout(
+  snapshot: WorkoutSnapshot,
+  logged: SessionSetRow[],
+  skippedBlockIds: ReadonlySet<string>,
+): boolean {
+  const unlogged = countUnloggedInNonSkippedBlocks(snapshot, logged, skippedBlockIds)
+  const skipped = skippedBlockIds.size
+  if (unlogged === 0 && skipped === 0) return true
+  const parts: string[] = []
+  if (unlogged > 0) parts.push(`${unlogged} unlogged set${unlogged === 1 ? '' : 's'}`)
+  if (skipped > 0) parts.push(`${skipped} skipped block${skipped === 1 ? '' : 's'}`)
+  return window.confirm(`Finish workout? You have ${parts.join(' and ')}.`)
 }
 
 function countUnloggedInNonSkippedBlocks(

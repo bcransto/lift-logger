@@ -160,3 +160,14 @@
   cursor: pointer;
 }
 .doneBtn:active { transform: scale(0.98); }
+
+/* During the "Go!" phase of the prep timer, paint the Record/Done button
+   green to nudge the user that this is the moment to lift. Reverts to the
+   accent color when the label flips to "Done" (text change handles the
+   semantic shift; color reinforces it). Applied as an additional class on
+   either .recordBtn or .doneBtn. */
+.goBtn {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #0a0a0a;
+}

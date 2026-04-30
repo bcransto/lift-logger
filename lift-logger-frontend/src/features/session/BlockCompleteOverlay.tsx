@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { Button } from '../../shared/components/Button'
+import { confirmEndWorkout } from './BlockView'
 import { mmss } from '../../shared/utils/format'
 import { cursorKeyFromRow, firstCursorOfBlock } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
@@ -32,6 +33,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const appendSetToCurrentBlock = useSessionStore((s) => s.appendSetToCurrentBlock)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const endWorkout = useSessionStore((s) => s.endWorkout)
+  const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
   const navigate = useNavigate()
 
   const session = useLiveQuery(
@@ -122,10 +124,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   }
 
   const onFinishWorkout = async () => {
-    const wording = isLastBlock
-      ? 'Finish workout?'
-      : `Finish workout? You've completed ${blockPosition} of ${totalBlocks} blocks.`
-    if (!window.confirm(wording)) return
+    if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
     await stopActiveTimer()
     await endWorkout()
     if (sessionId) navigate(`/session/${sessionId}/summary`, { replace: true })
