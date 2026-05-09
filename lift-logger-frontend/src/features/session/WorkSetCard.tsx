@@ -81,10 +81,15 @@ export function WorkSetCard({
   useTick(goDoneActive, tickGoDone, 1000)
   const goDoneLabel =
     focusedAt != null && Date.now() - focusedAt < 10_000 ? 'Go!' : 'Done'
+  // `skipped` and `done` are mutually exclusive at the row level (Skip Set
+   // writes skipped:1 with null actuals; logSet writes skipped:0). Order in
+   // the cls list matters — skipped overrides done's tint via later-rule wins.
+  const cardIsSkipped = actual?.skipped === 1
   const cls = [
     styles.card,
     isFocused ? styles.focused : '',
-    isDone ? styles.done : '',
+    isDone && !cardIsSkipped ? styles.done : '',
+    cardIsSkipped ? styles.skipped : '',
     target.is_peak && !isFocused ? styles.peak : '',
     onTap ? styles.tappable : '',
     onRecord ? styles.cardWithRecord : '',
