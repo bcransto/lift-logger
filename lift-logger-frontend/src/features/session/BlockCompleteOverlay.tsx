@@ -169,14 +169,14 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
       ) : null}
 
       <div className={styles.actions}>
-        <Button variant="secondary" block onClick={onAddSet}>
-          + Add a set
-        </Button>
         {nextBlockPosition !== null ? (
           <Button variant={isLastBlock ? 'secondary' : 'primary'} block onClick={onNextBlock}>
             Next block →
           </Button>
         ) : null}
+        <Button variant="secondary" block onClick={onAddSet}>
+          + Add a set
+        </Button>
         <Button variant="secondary" block onClick={onWorkoutOverview}>
           Workout overview
         </Button>
