@@ -34,6 +34,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const endWorkout = useSessionStore((s) => s.endWorkout)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
+  const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
   const navigate = useNavigate()
 
   const session = useLiveQuery(
@@ -62,8 +63,21 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const block = snapshot.blocks.find((b) => b.position === blockPosition)
   if (!block) return null
   const totalBlocks = snapshot.blocks.length
-  const isLastBlock = blockPosition === totalBlocks
-  const nextBlockPosition = isLastBlock ? null : blockPosition + 1
+  // "Next block →" should land on the next block the user actually has work
+  // left in — skip past anything they've already Finished or explicitly
+  // Skipped. Otherwise resuming a previously-skipped middle block would
+  // shove the user into a Done block that follows it. Mirrors what the
+  // store's `advance()` does for cursor-based transitions.
+  const nextBlockPosition = (() => {
+    for (const b of snapshot.blocks) {
+      if (b.position <= blockPosition) continue
+      if (doneBlockIds.has(b.id)) continue
+      if (skippedBlockIds.has(b.id)) continue
+      return b.position
+    }
+    return null
+  })()
+  const isLastBlock = nextBlockPosition === null
 
   // Block summary — just-completed block's logged rows.
   const blockLogged = (logged ?? []).filter((r) => r.block_position === blockPosition)

@@ -36,6 +36,7 @@ export function BlockIntroScreen() {
   const cursor = useSessionStore((s) => s.cursor)
   const applyEdit = useSessionStore((s) => s.applyEdit)
   const savePreference = useSessionStore((s) => s.savePreference)
+  const skipBlock = useSessionStore((s) => s.skipBlock)
 
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -81,6 +82,25 @@ export function BlockIntroScreen() {
     // replace (not push) so iOS edge-swipe-back from active doesn't pop to
     // the intro screen we just left — it goes to the overview/home behind it.
     navigate(`/session/${sessionId}/active/${c.blockPosition}/${setKey}`, { replace: true })
+  }
+
+  const onSkipBlock = async () => {
+    const msg = hasProgressInBlock
+      ? 'Skip this block? Logged sets will stay; the block is marked skipped so you can return later.'
+      : 'Skip this block?'
+    if (!window.confirm(msg)) return
+    await skipBlock(block.id)
+    // skipBlock advances the cursor to the next non-skipped block (or null).
+    // Route based on the new cursor: into intro for the next block, or to
+    // OverviewScreen / Summary if the workout is done.
+    const next = useSessionStore.getState().cursor
+    if (next) {
+      navigate(`/session/${sessionId}/intro/${next.blockPosition}`, { replace: true })
+    } else if (session?.workout_id) {
+      navigate(`/workout/${session.workout_id}`, { replace: true })
+    } else {
+      navigate(`/session/${sessionId}/summary`, { replace: true })
+    }
   }
 
   return (
@@ -299,6 +319,9 @@ export function BlockIntroScreen() {
       <div className={styles.footer}>
         <Button variant="primary" block onClick={onReady}>
           {ctaLabel}
+        </Button>
+        <Button variant="secondary" block onClick={() => void onSkipBlock()}>
+          Skip Block
         </Button>
       </div>
     </div>
