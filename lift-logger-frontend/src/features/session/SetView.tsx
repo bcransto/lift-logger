@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
+import { Button } from '../../shared/components/Button'
 import { NumberStepper } from '../../shared/components/NumberStepper'
 import { SessionHeader } from '../../shared/components/SessionHeader'
 import { TimerDock } from './TimerDock'
@@ -95,19 +96,36 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
   const [weight, setWeight] = useState<number | null>(null)
   const [reps, setReps] = useState<number | null>(null)
   const [duration, setDuration] = useState<number | null>(null)
+  // Snapshot of the seeded values so Update / Cancel can compare and reset.
+  // Edits land in weight/reps/duration but don't write to Dexie until Update.
+  const [seed, setSeed] = useState<{ w: number | null; r: number | null; d: number | null } | null>(null)
 
   useEffect(() => {
     if (!target) return
-    if (isDone && doneRow) {
-      setWeight(doneRow.actual_weight ?? target.t.target_weight ?? null)
-      setReps(doneRow.actual_reps ?? target.t.target_reps ?? null)
-      setDuration(doneRow.actual_duration_sec ?? target.t.target_duration_sec ?? null)
-    } else {
-      setWeight(pendingActuals?.actual_weight ?? target.t.target_weight ?? null)
-      setReps(pendingActuals?.actual_reps ?? target.t.target_reps ?? null)
-      setDuration(pendingActuals?.actual_duration_sec ?? target.t.target_duration_sec ?? null)
-    }
+    const w = isDone && doneRow
+      ? (doneRow.actual_weight ?? target.t.target_weight ?? null)
+      : (pendingActuals?.actual_weight ?? target.t.target_weight ?? null)
+    const r = isDone && doneRow
+      ? (doneRow.actual_reps ?? target.t.target_reps ?? null)
+      : (pendingActuals?.actual_reps ?? target.t.target_reps ?? null)
+    const d = isDone && doneRow
+      ? (doneRow.actual_duration_sec ?? target.t.target_duration_sec ?? null)
+      : (pendingActuals?.actual_duration_sec ?? target.t.target_duration_sec ?? null)
+    setWeight(w); setReps(r); setDuration(d)
+    setSeed({ w, r, d })
   }, [target, doneRow, isDone, pendingActuals])
+
+  const hasPending = seed != null && (weight !== seed.w || reps !== seed.r || duration !== seed.d)
+  const onCancel = () => {
+    if (seed) {
+      setWeight(seed.w); setReps(seed.r); setDuration(seed.d)
+    }
+  }
+  const onUpdate = async () => {
+    if (!hasPending) return
+    await commit({ w: weight, r: reps, d: duration })
+    setSeed({ w: weight, r: reps, d: duration })
+  }
 
   // Commit strategy varies by edit mode.
   const commit = async (patch: { w?: number | null; r?: number | null; d?: number | null }) => {
@@ -280,7 +298,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
           step={5}
           min={0}
           unit="sec"
-          onChange={(v) => { setDuration(v); void commit({ d: v }) }}
+          onChange={setDuration}
           allowNull
         />
       ) : (
@@ -290,7 +308,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
             value={weight}
             step={5}
             unit="lb"
-            onChange={(v) => { setWeight(v); void commit({ w: v }) }}
+            onChange={setWeight}
             allowNull
           />
           <NumberStepper
@@ -298,7 +316,7 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
             value={reps}
             step={1}
             min={0}
-            onChange={(v) => { setReps(v); void commit({ r: v }) }}
+            onChange={setReps}
             allowNull
           />
         </div>
@@ -308,9 +326,20 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
         {isFutureReadonly ? (
           <>This set hasn't been reached yet. Edits apply when you reach it.</>
         ) : isDone ? (
-          <>Editing the logged values for this set. Changes save automatically.</>
+          <>Editing the logged values for this set. Tap Update to save, Cancel to discard.</>
         ) : null}
       </p>
+
+      {!isFutureReadonly ? (
+        <div className={styles.actions}>
+          <Button variant="secondary" block onClick={onCancel} disabled={!hasPending}>
+            Cancel
+          </Button>
+          <Button variant="primary" block onClick={() => void onUpdate()} disabled={!hasPending}>
+            Update
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }
