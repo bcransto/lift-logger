@@ -237,3 +237,25 @@ div.blockTap {
 .status_pending { /* default */ }
 
 .blockTap:active { transform: scale(0.99); }
+
+/* Tap-to-reveal action button (Edit / Cont. / Start) — slides in below the
+   tile content when tap-focused. Full-width footer style; accent color so
+   the action is unmissable against the tile body. */
+.tileActionRow {
+  margin-top: var(--space-2);
+}
+.tileAction {
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  min-height: 44px;
+  background: var(--accent);
+  color: #0a0a0a;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.tileAction:active { transform: scale(0.98); }

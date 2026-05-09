@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
@@ -180,27 +180,64 @@ export function OverviewScreen() {
     const setKey = `${c.blockExercisePosition}.${c.roundNumber}.${c.setNumber}`
     navigate(`/session/${sessionId}/active/${c.blockPosition}/${setKey}`)
   }
-  const onTileTap = async (block: SnapshotBlock, status: BlockStatus) => {
+  // Tap-to-reveal action button per tile (mirrors BlockView's #5a pattern).
+  // Tap the tile → toggle tap-focus on/off. The contextual action button
+  // (Edit / Cont. / Start) appears within the tap-focused tile. Tapping the
+  // button fires the action below; tapping a different tile moves focus.
+  const [tapFocusBlockId, setTapFocusBlockId] = useState<string | null>(null)
+  const onTileToggleFocus = (blockId: string) => {
+    setTapFocusBlockId((prev) => (prev === blockId ? null : blockId))
+  }
+
+  // Label per status — drives the visible button. Done blocks have no
+  // pre-existing tile action (it's the new Edit affordance).
+  const actionLabelFor = (status: BlockStatus): 'Edit' | 'Cont.' | 'Start' | null => {
+    switch (status) {
+      case 'done_complete':
+      case 'done_partial':
+        return 'Edit'
+      case 'current':
+      case 'skipped_partial':
+        return 'Cont.'
+      case 'skipped_empty':
+      case 'pending':
+        return 'Start'
+      default:
+        return null
+    }
+  }
+
+  const onTileAction = async (block: SnapshotBlock, status: BlockStatus) => {
     if (!activeSession) return
     const sid = activeSession.id
+    setTapFocusBlockId(null)  // collapse tap-focus once an action fires
     const currentBlockId = cursor
       ? snapshot.blocks.find((b) => b.position === cursor.blockPosition)?.id ?? null
       : null
     if (status === 'current' && cursor) {
+      // Cont. on current — go straight to the active cursor.
       navigateToCursor(sid, cursor)
       return
     }
-    if (status === 'skipped_empty' || status === 'skipped_partial') {
-      // Re-entering an explicitly-skipped block: un-skip + run intro ceremony.
+    if (status === 'skipped_partial') {
+      // Cont. on skipped & partial — un-skip and continue at first unlogged
+      // set. Skip the intro ceremony per design (this is a continuation, not
+      // a re-entry).
+      await returnToBlock(block.id)
+      const c = useSessionStore.getState().cursor
+      if (c) navigateToCursor(sid, c)
+      else navigate(`/session/${sid}/intro/${block.position}`)
+      return
+    }
+    if (status === 'skipped_empty') {
+      // Start on skipped & empty — un-skip and run the intro ceremony.
       await returnToBlock(block.id)
       navigate(`/session/${sid}/intro/${block.position}`)
       return
     }
     if (status === 'pending') {
-      // Jump-ahead: current block becomes Skipped (returnable), cursor moves
-      // to the target block's first set, route through the intro ceremony.
-      // Confirm first if leaving a different block — a stray tap shouldn't
-      // silently flag the current block skipped, especially mid-progress.
+      // Start on pending — jump-ahead. Current block becomes Skipped (with
+      // confirm), cursor moves to target's first set, intro ceremony.
       if (currentBlockId && currentBlockId !== block.id) {
         const currentBlock = snapshot.blocks.find((b) => b.id === currentBlockId)
         const currentName = currentBlock?.exercises.map((e) => e.name).join(' + ') ?? 'this block'
@@ -216,7 +253,18 @@ export function OverviewScreen() {
       navigate(`/session/${sid}/intro/${block.position}`)
       return
     }
-    // done_complete / done_partial → no-op for now (future: read-only summary).
+    if (status === 'done_complete' || status === 'done_partial') {
+      // Edit on done — jump cursor to this block's first set and route to
+      // BlockView. The user then taps individual cards (per #5a) to edit
+      // specific sets via SetView. The cursor temporarily pointing into a
+      // Done block is fine — blockStatusOf precedence keeps the tile
+      // showing as Done (not Current) since it's still in doneBlockIds.
+      const target = firstCursorOfBlock(snapshot, block.position)
+      if (!target) return
+      jumpTo(target)
+      navigateToCursor(sid, target)
+      return
+    }
   }
 
   return (
@@ -241,6 +289,7 @@ export function OverviewScreen() {
       <ol className={styles.blocks}>
         {snapshot.blocks.map((b, bi) => {
           const { status, done, total } = blockStatusOf(b)
+          const actionLabel = activeSession ? actionLabelFor(status) : null
           return (
             <BlockRow
               key={b.id}
@@ -249,7 +298,10 @@ export function OverviewScreen() {
               exerciseMeta={exerciseMap}
               status={activeSession ? status : null}
               progress={activeSession ? { done, total } : null}
-              onTap={activeSession ? () => void onTileTap(b, status) : null}
+              onTap={activeSession ? () => onTileToggleFocus(b.id) : null}
+              tapFocused={tapFocusBlockId === b.id}
+              actionLabel={actionLabel}
+              onAction={activeSession && actionLabel ? () => void onTileAction(b, status) : null}
             />
           )
         })}
@@ -296,6 +348,9 @@ function BlockRow({
   status,
   progress,
   onTap,
+  tapFocused,
+  actionLabel,
+  onAction,
 }: {
   block: SnapshotBlock
   startNumber: number
@@ -303,6 +358,14 @@ function BlockRow({
   status: BlockStatus | null
   progress: { done: number; total: number } | null
   onTap: (() => void) | null
+  /** True when this tile is tap-focused (button row visible). Mutually
+      exclusive across tiles in the parent's render. */
+  tapFocused?: boolean
+  /** Contextual button label — Edit / Cont. / Start. Hidden when null. */
+  actionLabel?: 'Edit' | 'Cont.' | 'Start' | null
+  /** Fired on action-button tap. Null when the tile has no action available
+      (pre-session or unmapped status). */
+  onAction?: (() => void) | null
 }) {
   const grouped = block.kind === 'superset' || block.kind === 'circuit'
   const label = block.kind === 'superset' ? 'SUPERSET' : block.kind === 'circuit' ? 'CIRCUIT' : null
@@ -358,6 +421,13 @@ function BlockRow({
       ) : (
         <div className={styles.blockTap}>{content}</div>
       )}
+      {tapFocused && actionLabel && onAction ? (
+        <div className={styles.tileActionRow}>
+          <button type="button" className={styles.tileAction} onClick={onAction}>
+            {actionLabel}
+          </button>
+        </div>
+      ) : null}
     </li>
   )
 }
