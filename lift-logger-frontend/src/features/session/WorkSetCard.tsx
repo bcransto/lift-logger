@@ -16,8 +16,20 @@ type Props = {
   showExName?: boolean
   round: number | null
   totalRounds: number | null
-  /** If provided, card is tappable (hotlink to Set view). Legacy superset/circuit path. */
+  /** Card-level tap (#5a tap-to-focus). When tap-focus moves to this card,
+      `tapFocused` becomes true and the contextual action button renders. */
   onTap?: () => void
+  /** Tap-focus state from the parent. The parent owns "which card is
+      tap-focused"; we just render based on it. Mutually exclusive across
+      cards in the same BlockView render. */
+  tapFocused?: boolean
+  /** Tap-focus action: open SetView pinned to this set. Shown when card is
+      tap-focused AND `actual?.skipped !== 1` AND `isDone`. */
+  onEdit?: () => void
+  /** Tap-focus action: jump cursor to this set (auto-skipping intermediate
+      untouched sets if forward). Shown when card is tap-focused AND the set
+      is not logged-with-actuals — i.e. skipped or pending/future. */
+  onStart?: () => void
   /** If provided, renders a Record button inside the card (single-block flow). */
   onRecord?: () => void
   /** Superset/circuit focused-card action. When supplied and the card is
@@ -46,6 +58,9 @@ export function WorkSetCard({
   round,
   totalRounds,
   onTap,
+  tapFocused,
+  onEdit,
+  onStart,
   onRecord,
   onDone,
   workTimerStartedAt,
@@ -85,6 +100,7 @@ export function WorkSetCard({
    // writes skipped:1 with null actuals; logSet writes skipped:0). Order in
    // the cls list matters — skipped overrides done's tint via later-rule wins.
   const cardIsSkipped = actual?.skipped === 1
+  const tapFocusActive = Boolean(tapFocused) && Boolean(onEdit || onStart)
   const cls = [
     styles.card,
     isFocused ? styles.focused : '',
@@ -94,6 +110,9 @@ export function WorkSetCard({
     onTap ? styles.tappable : '',
     onRecord ? styles.cardWithRecord : '',
     showFocusedActions ? styles.cardWithActions : '',
+    // Tap-focused (Edit / Start) reuses the Record-style 2-column grid so the
+    // body + button layout matches the existing focused-card pattern.
+    tapFocusActive ? styles.cardWithRecord : '',
   ].filter(Boolean).join(' ')
 
   const weightDisplay =
@@ -190,6 +209,30 @@ export function WorkSetCard({
         >
           {goDoneActive ? goDoneLabel : 'Record'}
         </button>
+      </div>
+    )
+  }
+  // Tap-focus state (#5a). When the parent has marked this card tap-focused
+  // and the card is in a state that supports an action button (logged-with-
+  // actuals → Edit; skipped or pending → Start), render the body + button in
+  // the 2-column layout used by Record / Done. Otherwise, the card is a plain
+  // tappable surface that fires onTap to set tap-focus to itself.
+  if (tapFocused && (onEdit || onStart)) {
+    const isSkipped = actual?.skipped === 1
+    const showEdit = isDone && !isSkipped && onEdit
+    const showStart = !showEdit && (isSkipped || !isDone) && onStart
+    return (
+      <div className={cls}>
+        <div className={styles.cardBody}>{body}</div>
+        {showEdit ? (
+          <button type="button" className={styles.recordBtn} onClick={onEdit}>
+            Edit
+          </button>
+        ) : showStart ? (
+          <button type="button" className={styles.recordBtn} onClick={onStart}>
+            Start
+          </button>
+        ) : null}
       </div>
     )
   }

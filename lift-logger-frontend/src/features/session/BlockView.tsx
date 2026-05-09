@@ -22,7 +22,7 @@ import { db } from '../../db/db'
 import { SessionHeader } from '../../shared/components/SessionHeader'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useUiStore } from '../../stores/uiStore'
-import { cursorKey, cursorKeyFromRow, isLastSetOfBlock, isNewBlock, parseSetKey, setsForRound, targetAt } from './sessionEngine'
+import { compareCursors, cursorKey, cursorKeyFromRow, isLastSetOfBlock, isNewBlock, parseSetKey, setsForRound, targetAt } from './sessionEngine'
 import { WorkSetCard } from './WorkSetCard'
 import { RestCard } from './RestCard'
 import { UndoToast } from './UndoToast'
@@ -61,6 +61,7 @@ export function BlockView() {
   const cursor = useSessionStore((s) => s.cursor)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
   const jumpTo = useSessionStore((s) => s.jumpTo)
+  const autoSkipUntouchedBetween = useSessionStore((s) => s.autoSkipUntouchedBetween)
   const logSet = useSessionStore((s) => s.logSet)
   const skipCurrentSet = useSessionStore((s) => s.skipCurrentSet)
   const startActiveTimer = useSessionStore((s) => s.startActiveTimer)
@@ -77,6 +78,14 @@ export function BlockView() {
   // Block position to show BlockCompleteOverlay for (captured at Record-time
   // before the cursor advances, so the overlay shows the block we just finished).
   const [blockCompletePos, setBlockCompletePos] = useState<number | null>(null)
+
+  // #5a tap-focus: which non-cursor card has the user selected by tap? Stored
+  // as a cursorKey string so it survives cursor advances. Toggled on tap of
+  // the same card; moves on tap of a different card. Cleared when SetView
+  // closes (Edit), cursor jumps somewhere unrelated, or the block changes.
+  const [tapFocusKey, setTapFocusKey] = useState<string | null>(null)
+  // Initial cursor for SetView when opened via Edit. null = use execution cursor.
+  const [setViewInitialCursor, setSetViewInitialCursor] = useState<Cursor | null>(null)
 
   // Cursor is the source of truth. URL is a derived projection.
 
@@ -270,6 +279,29 @@ export function BlockView() {
     openOverlay('blockComplete')
   }
 
+  // #5a tap-focus handlers — shared by both render paths.
+  const onTapCard = (c: Cursor) => {
+    const k = cursorKey(c)
+    setTapFocusKey((prev) => (prev === k ? null : k))
+  }
+  const onEditCard = (c: Cursor) => {
+    setTapFocusKey(null)
+    setSetViewInitialCursor(c)
+    openOverlay('set')
+  }
+  const onStartCard = async (c: Cursor) => {
+    setTapFocusKey(null)
+    // Iteration order check: is target later, earlier, or equal to cursor?
+    const dir = compareCursors(snapshot, cursor, c)
+    if (dir < 0) {
+      // Forward jump — auto-skip untouched sets in between (inclusive of
+      // the old cursor's own set per the plan).
+      await autoSkipUntouchedBetween(cursor, c)
+    }
+    // Backward / equal: just jump, no intermediate writes.
+    jumpTo(c)
+  }
+
   const blockTitle = bes.map((e) => e.name).join('  +  ')
   const blockKindTag =
     block.kind === 'superset' ? `SUPERSET × ${block.rounds}` : block.kind === 'circuit' ? `CIRCUIT × ${block.rounds}` : null
@@ -373,6 +405,11 @@ export function BlockView() {
             const isRestMode = isCursorSet && isLogged
             const isPreTap = isCursorSet && !isLogged
 
+            const cKey = cursorKey(c)
+            // Tap-to-focus is suppressed on the cursor-focused pre-log card —
+            // its primary action is the Go!/Done button. Everywhere else, the
+            // card is tappable to reveal Edit / Start.
+            const cardTapEligible = !isPreTap
             return (
               <div key={`s${t.set_number}`} className={styles.singleCardWrap}>
                 <WorkSetCard
@@ -386,6 +423,10 @@ export function BlockView() {
                   round={null}
                   totalRounds={null}
                   onRecord={isPreTap ? () => void onTapPreFocused(t.set_number) : undefined}
+                  onTap={cardTapEligible ? () => onTapCard(c) : undefined}
+                  tapFocused={tapFocusKey === cKey}
+                  onEdit={() => onEditCard(c)}
+                  onStart={() => void onStartCard(c)}
                 />
                 {isRestMode ? (
                   <RestWithNext
@@ -402,7 +443,12 @@ export function BlockView() {
 
         <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
-        {overlay === 'set' ? <SetViewOverlay onClose={closeOverlay} /> : null}
+        {overlay === 'set' ? (
+          <SetViewOverlay
+            onClose={() => { closeOverlay(); setSetViewInitialCursor(null) }}
+            initialViewingCursor={setViewInitialCursor}
+          />
+        ) : null}
         {overlay === 'setLogger' ? (
           <SetLogger onRecord={onSetLoggerRecord} onCancel={onSetLoggerCancel} />
         ) : null}
@@ -582,13 +628,16 @@ export function BlockView() {
         {cards.map((c, i) => {
           if (c.kind === 'work') {
             const isFocused = cursorKey(c.cursor) === cursorK
+            const isLogged = Boolean(c.row)
+            const isPreLogFocused = isFocused && !isLogged
+            const cardTapEligible = !isPreLogFocused
             return (
               <WorkSetCard
                 key={`w${i}`}
                 target={c.target}
                 cursor={c.cursor}
                 isFocused={isFocused}
-                isDone={Boolean(c.row)}
+                isDone={isLogged}
                 actual={c.row}
                 beName={c.be.name}
                 showExName={bes.length > 1}
@@ -597,6 +646,10 @@ export function BlockView() {
                 onDone={isFocused ? onDoneFocused : undefined}
                 workTimerStartedAt={isFocused ? session.work_timer_started_at ?? null : null}
                 workTimerDurationSec={isFocused ? session.work_timer_duration_sec ?? null : null}
+                onTap={cardTapEligible ? () => onTapCard(c.cursor) : undefined}
+                tapFocused={tapFocusKey === cursorKey(c.cursor)}
+                onEdit={() => onEditCard(c.cursor)}
+                onStart={() => void onStartCard(c.cursor)}
                 // Auto-log on zero stays on the current cursor so the rest
                 // timer can play out before the next set's work timer starts
                 // — otherwise both countdowns run simultaneously. The
@@ -665,7 +718,12 @@ export function BlockView() {
 
       <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
-      {overlay === 'set' ? <SetViewOverlay onClose={closeOverlay} /> : null}
+      {overlay === 'set' ? (
+        <SetViewOverlay
+          onClose={() => { closeOverlay(); setSetViewInitialCursor(null) }}
+          initialViewingCursor={setViewInitialCursor}
+        />
+      ) : null}
       {overlay === 'setLogger' ? (
         <SetLogger
           primaryLabel="Update"

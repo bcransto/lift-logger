@@ -54,14 +54,21 @@ export function setsForRound(be: SnapshotBlockExercise, r: number): SnapshotSetT
 
 /**
  * Find the cursor one step after the given cursor, skipping any block whose
- * id is in `skippedBlockIds`. If cursor itself is inside a skipped block
- * (user returned then something auto-advanced past them), return the first
- * entry beyond that block. Returns null when done.
+ * id is in `skippedBlockIds` AND any set whose key is in `loggedSetKeys`.
+ * If cursor itself is inside a skipped block (user returned then something
+ * auto-advanced past them), return the first entry beyond that block.
+ * Returns null when done.
+ *
+ * `loggedSetKeys` lets the caller skip past sets that have already been
+ * logged-with-actuals, so the cursor lands on the next set the user actually
+ * has work left in (logged sets are "done"; skipped sets are valid landing
+ * spots — user can revisit them).
  */
 export function advance(
   snapshot: WorkoutSnapshot,
   cursor: Cursor,
   skippedBlockIds: ReadonlySet<string> = EMPTY_SET,
+  loggedSetKeys: ReadonlySet<string> = EMPTY_SET,
 ): Cursor | null {
   let seen = false
   let cursorBlockSkipped = false
@@ -74,7 +81,10 @@ export function advance(
       }
       continue
     }
-    if (seen) return entry.cursor
+    if (seen) {
+      if (loggedSetKeys.has(cursorKey(entry.cursor))) continue
+      return entry.cursor
+    }
     if (cursorsEqual(entry.cursor, cursor)) seen = true
   }
   // If cursor was inside a skipped block and no later non-skipped entry exists.
@@ -106,6 +116,23 @@ export function cursorsEqual(a: Cursor, b: Cursor): boolean {
     a.roundNumber === b.roundNumber &&
     a.setNumber === b.setNumber
   )
+}
+
+/**
+ * Compare two cursors by iteration order in this snapshot. Returns:
+ *   -1  if `a` comes before `b`
+ *    0  if same cursor (or either isn't found)
+ *   +1  if `a` comes after `b`
+ *
+ * Used by the tap-focus Start flow to decide forward vs backward direction.
+ */
+export function compareCursors(snapshot: WorkoutSnapshot, a: Cursor, b: Cursor): -1 | 0 | 1 {
+  if (cursorsEqual(a, b)) return 0
+  for (const entry of iterateSets(snapshot)) {
+    if (cursorsEqual(entry.cursor, a)) return -1
+    if (cursorsEqual(entry.cursor, b)) return 1
+  }
+  return 0
 }
 
 export function cursorKey(c: Cursor): string {

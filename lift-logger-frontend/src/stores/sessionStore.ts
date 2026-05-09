@@ -128,6 +128,15 @@ export type SessionState = {
   // Phase 2 actions
   pause: () => Promise<void>
   resume: () => Promise<void>
+  /**
+   * Write `skipped:1` rows for every untouched (no existing row) set strictly
+   * between `from` and `to` (forward iteration order), inclusive of `from`.
+   * Used by BlockView's "Start on future set" flow to mark sets the user is
+   * leapfrogging. No-op if `to` is not strictly after `from` in iteration
+   * order, or if the run lands inside a different block (caller should keep
+   * within-block).
+   */
+  autoSkipUntouchedBetween: (from: Cursor, to: Cursor) => Promise<void>
   skipCurrentSet: () => Promise<{ undoCursor: Cursor } | null>
   undoSkip: (cursor: Cursor) => void
   skipBlock: (blockId: string) => Promise<void>
@@ -537,7 +546,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const shouldAdvance = input?.advance !== false
     const excluded = unionBlockIds(skippedBlockIds, nextDoneBlockIds)
-    const next = shouldAdvance ? advance(snapshot, cursor, excluded) : cursor
+    // Cursor advances past sets that are already logged-with-actuals. This
+    // matters when the user returns to a previously-skipped set and logs it
+    // — the engine should land them on the next set they still owe (skipped
+    // or pending), not the very next iteration step which might be a logged
+    // set they already finished.
+    const allRows = await db.session_sets.where('session_id').equals(sessionId).toArray()
+    const loggedSetKeys = new Set(
+      allRows.filter((r) => r.skipped !== 1).map(cursorKeyFromRow),
+    )
+    const next = shouldAdvance ? advance(snapshot, cursor, excluded, loggedSetKeys) : cursor
     const ses = await db.sessions.get(sessionId)
     if (ses) {
       await db.sessions.put({
@@ -685,6 +703,48 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       updated_at: now,
     })
     set({ pausedAt: null, accumulatedPausedMs: newAccum })
+  },
+
+  async autoSkipUntouchedBetween(from, to) {
+    const { sessionId, snapshot } = get()
+    if (!sessionId || !snapshot) return
+    // Walk iteration order. Once we pass `from`, write skipped:1 for every
+    // untouched set we hit until we reach `to`. Inclusive of `from` (the user
+    // is leaving it without logging — same disposition as any intermediate).
+    const existingRows = await db.session_sets.where('session_id').equals(sessionId).toArray()
+    const existingKeys = new Set(existingRows.map(cursorKeyFromRow))
+    const now = Date.now()
+    let started = false
+    for (const entry of iterateSets(snapshot)) {
+      if (cursorsEqual(entry.cursor, to)) break
+      if (!started && cursorsEqual(entry.cursor, from)) started = true
+      if (!started) continue
+      const k = cursorKey(entry.cursor)
+      if (existingKeys.has(k)) continue // logged or already-skipped — leave as-is
+      await db.session_sets.put({
+        id: uuid('ss') as SessionSetId,
+        session_id: sessionId,
+        exercise_id: entry.blockExercise.exercise_id as ExerciseId,
+        block_position: entry.cursor.blockPosition,
+        block_exercise_position: entry.cursor.blockExercisePosition,
+        round_number: entry.cursor.roundNumber,
+        set_number: entry.cursor.setNumber,
+        target_weight: entry.target.target_weight ?? null,
+        target_reps: entry.target.target_reps ?? null,
+        target_duration_sec: entry.target.target_duration_sec ?? null,
+        actual_weight: null,
+        actual_reps: null,
+        actual_duration_sec: null,
+        rpe: null,
+        rest_taken_sec: null,
+        is_pr: 0,
+        was_swapped: 0,
+        logged_at: now,
+        created_at: now,
+        updated_at: now,
+        skipped: 1,
+      })
+    }
   },
 
   async skipCurrentSet() {

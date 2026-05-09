@@ -265,6 +265,24 @@ describe('sessionEngine — skip-aware advance', () => {
   it('default empty skipped set preserves original linear behavior', () => {
     expect(advance(s, BP1_BE1_R1_S1)).toEqual(BP1_BE1_R1_S2)
   })
+
+  // ─── #5a: loggedSetKeys lets advance skip past completed sets ──────
+  it('advance skips past sets in loggedSetKeys, landing on the next non-completed', () => {
+    // Cursor on block 1 set 1; if set 2 is logged, advance should skip past
+    // it and land on block 2's first cursor.
+    const logged = new Set(['1.1.1.2'])  // cursorKey for BP1_BE1_R1_S2
+    expect(advance(s, BP1_BE1_R1_S1, new Set(), logged)).toEqual(BP2_BE1_R1_S1)
+  })
+
+  it('advance with no loggedSetKeys preserves linear behavior', () => {
+    expect(advance(s, BP1_BE1_R1_S1, new Set(), new Set())).toEqual(BP1_BE1_R1_S2)
+  })
+
+  it('advance still skips skipped blocks even when loggedSetKeys is provided', () => {
+    const skipped = new Set(['b1'])
+    const logged = new Set(['1.1.1.2'])
+    expect(advance(s, BP1_BE1_R1_S1, skipped, logged)).toEqual(BP2_BE1_R1_S1)
+  })
 })
 
 describe('sessionEngine — firstCursorOfBlock (fixed to not hardcode position=1)', () => {

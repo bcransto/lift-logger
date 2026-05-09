@@ -34,7 +34,16 @@ import type { SessionSetId } from '../../types/ids'
 import { uuid } from '../../shared/utils/uuid'
 import styles from './SetView.module.css'
 
-export function SetViewOverlay({ onClose }: { onClose: () => void }) {
+export function SetViewOverlay({
+  onClose,
+  initialViewingCursor,
+}: {
+  onClose: () => void
+  /** Pin SetView's initial viewing cursor to this position rather than the
+      execution cursor. Used by BlockView's Edit-on-tap-focus flow so the
+      editor lands on the tapped set, not whatever the engine cursor is. */
+  initialViewingCursor?: Cursor | null
+}) {
   const sessionId = useSessionStore((s) => s.sessionId)
   const executionCursor = useSessionStore((s) => s.cursor)
   const pendingActuals = useSessionStore((s) => s.pendingActuals)
@@ -51,12 +60,19 @@ export function SetViewOverlay({ onClose }: { onClose: () => void }) {
     try { return JSON.parse(session.workout_snapshot) as WorkoutSnapshot } catch { return null }
   }, [session])
 
-  // Viewing cursor is local — starts at the execution cursor and moves via up/down.
-  const [viewingCursor, setViewingCursor] = useState<Cursor | null>(executionCursor)
+  // Viewing cursor is local — starts at `initialViewingCursor` if the caller
+  // pinned one (Edit-on-tap-focus), otherwise the execution cursor. Moves via
+  // the up/down arrows.
+  const [viewingCursor, setViewingCursor] = useState<Cursor | null>(
+    initialViewingCursor ?? executionCursor,
+  )
   useEffect(() => {
     // Reset viewing cursor whenever the execution cursor jumps (e.g., user
     // closed + reopened after Next). Preserves in-session navigation while
-    // the overlay is open.
+    // the overlay is open. Skipped when caller pinned an explicit
+    // `initialViewingCursor` (Edit-on-tap-focus) — that pin should hold even
+    // if the execution cursor advances underneath.
+    if (initialViewingCursor) return
     setViewingCursor(executionCursor)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executionCursor?.blockPosition, executionCursor?.blockExercisePosition,
