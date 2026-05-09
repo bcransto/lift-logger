@@ -51,7 +51,14 @@ export function OverviewScreen() {
   const activeSession = useLiveQuery(async () => {
     if (!workoutId) return null
     const all = await db.sessions.where('workout_id').equals(workoutId).toArray()
-    return all.find((s) => s.ended_at == null) ?? null
+    // Most-recently-started wins. Dexie returns rows in primary-key order
+    // (lexicographic on the id string) by default — that's not the same as
+    // chronological, so two leftover active sessions from a crash could pick
+    // the older empty one. The hydrate path already enforces single-active
+    // semantics in normal use; this is defensive.
+    return all
+      .filter((s) => s.ended_at == null)
+      .sort((a, b) => b.started_at - a.started_at)[0] ?? null
   }, [workoutId])
 
   // When active, drive the snapshot off the session's frozen workout_snapshot

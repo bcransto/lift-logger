@@ -292,9 +292,13 @@ function unionBlockIds(a: ReadonlySet<string>, b: ReadonlySet<string>): Set<stri
   return out
 }
 
-// Returns true if every set in the named block has a non-skipped session_set.
-// Used by logSet to auto-flip a block to Done & Complete on the last log.
-async function isBlockFullyLogged(
+// Returns true if every set in the named block has a session_sets row —
+// logged (skipped: 0) or deliberately skipped (skipped: 1). Both are
+// "accounted for" from the user's intent perspective: they decided what to
+// do with that slot. Used by logSet to auto-flip a block to Done when the
+// final accounted-for row lands. The Done sub-status (complete vs partial)
+// is derived from the count of NON-skipped rows in OverviewScreen, not here.
+async function isBlockFullyAccounted(
   sessionId: string,
   snapshot: WorkoutSnapshot,
   blockPosition: number,
@@ -303,7 +307,7 @@ async function isBlockFullyLogged(
   if (!blk) return false
   const rows = await db.session_sets
     .where('session_id').equals(sessionId)
-    .filter((r) => r.block_position === blockPosition && r.skipped !== 1)
+    .filter((r) => r.block_position === blockPosition)
     .toArray()
   const covered = new Set(rows.map(cursorKeyFromRow))
   const rounds = blk.kind === 'single' ? 1 : blk.rounds
@@ -527,7 +531,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const { doneBlockIds } = get()
     let nextDoneBlockIds = doneBlockIds
     const blk = snapshot.blocks.find((b) => b.position === cursor.blockPosition)
-    if (blk && !doneBlockIds.has(blk.id) && await isBlockFullyLogged(sessionId, snapshot, blk.position)) {
+    if (blk && !doneBlockIds.has(blk.id) && await isBlockFullyAccounted(sessionId, snapshot, blk.position)) {
       nextDoneBlockIds = new Set([...doneBlockIds, blk.id])
     }
 

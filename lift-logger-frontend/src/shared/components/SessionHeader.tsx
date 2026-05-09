@@ -48,7 +48,11 @@ export function SessionHeader({
 
   const activeSession = useLiveQuery(async () => {
     const all = await db.sessions.toArray()
-    return all.find((s) => s.ended_at == null) ?? null
+    // Most-recently-started wins (defensive against multi-active-session
+    // states from crashes / multi-tab). See OverviewScreen for the same.
+    return all
+      .filter((s) => s.ended_at == null)
+      .sort((a, b) => b.started_at - a.started_at)[0] ?? null
   }, [])
 
   const onSessionRoute = location.pathname.startsWith('/session/')

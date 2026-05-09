@@ -488,6 +488,20 @@ export function BlockView() {
   }
 
   const focusedRestAfterSec = restForCursor(snapshot, cursor)
+  // True when the focused cursor is the very last set of the last block —
+  // i.e. logging it should advance the cursor (to null) and end the
+  // workout. Without this, an auto-log on a timed last-overall set with a
+  // non-zero rest_after_sec would pass `advance: false`, leaving the user
+  // stuck on a disabled "auto on timer zero" finishBlock card.
+  // (block.kind is already narrowed to 'superset' | 'circuit' on this path.)
+  const focusedIsLastOverall = (() => {
+    const lastBeIdx = bes.length - 1
+    const beAt = bes.findIndex((e) => e.position === cursor.blockExercisePosition)
+    if (beAt !== lastBeIdx) return false
+    const setsInRound = setsForRound(bes[beAt]!, cursor.roundNumber)
+    const lastSetInBe = setsInRound[setsInRound.length - 1]?.set_number === cursor.setNumber
+    return lastSetInBe && cursor.roundNumber === block.rounds
+  })()
 
   // Focused-card Done: opens the SetLogger overlay pre-filled with target
   // values. If the user's target-default is fine they tap Update immediately;
@@ -503,7 +517,9 @@ export function BlockView() {
       actualWeight: actuals.actualWeight,
       actualReps: actuals.actualReps,
       actualDurationSec: actuals.actualDurationSec,
-      advance: focusedRestAfterSec === 0,
+      // Last-overall set: auto-advance regardless of rest_after_sec — the
+      // workout is done logically, no rest card or finishBlock tap to wait on.
+      advance: focusedRestAfterSec === 0 || focusedIsLastOverall,
     })
     closeOverlay()
   }
@@ -579,8 +595,14 @@ export function BlockView() {
                 workTimerDurationSec={isFocused ? session.work_timer_duration_sec ?? null : null}
                 // Auto-log on zero stays on the current cursor so the rest
                 // timer can play out before the next set's work timer starts
-                // — otherwise both countdowns run simultaneously.
-                onTimerZero={isFocused ? () => { void logSet({ advance: focusedRestAfterSec === 0 }) } : undefined}
+                // — otherwise both countdowns run simultaneously. The
+                // last-overall exception forces advance regardless: there's
+                // no rest card or next set after it, only a disabled-when-
+                // timed finishBlock card that promises "auto on timer zero",
+                // and that promise has to land somewhere.
+                onTimerZero={isFocused ? () => {
+                  void logSet({ advance: focusedRestAfterSec === 0 || focusedIsLastOverall })
+                } : undefined}
               />
             )
           }
