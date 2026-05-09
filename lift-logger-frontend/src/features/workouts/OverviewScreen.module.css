@@ -148,6 +148,9 @@
 
 .startRow {
   margin-top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 /* ─── Tile interactivity & status indicators ─────────────────────────

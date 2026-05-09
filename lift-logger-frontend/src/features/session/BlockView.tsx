@@ -63,7 +63,6 @@ export function BlockView() {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const logSet = useSessionStore((s) => s.logSet)
   const skipCurrentSet = useSessionStore((s) => s.skipCurrentSet)
-  const endWorkout = useSessionStore((s) => s.endWorkout)
   const startActiveTimer = useSessionStore((s) => s.startActiveTimer)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const adjustWorkTimer = useSessionStore((s) => s.adjustWorkTimer)
@@ -228,10 +227,15 @@ export function BlockView() {
     if (undo) showUndo('Set skipped', undo.undoCursor)
   }
 
-  const onEnd = async () => {
-    if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
-    await endWorkout()
-    navigate(`/session/${sessionId}/summary`, { replace: true })
+  // End Workout is a review-then-end flow: tap End Workout in BlockView (or
+  // Finish Workout in BCO) routes the user to OverviewScreen first so they
+  // can see final block status (Done/Partial/Skipped) before the irreversible
+  // end. The confirm + endWorkout call happens on Overview's "End Workout"
+  // button, not here.
+  const onEnd = () => {
+    if (session?.workout_id) {
+      navigate(`/workout/${session.workout_id}`)
+    }
   }
 
   // Block-level Skip and Finish share the same confirmation pattern:

@@ -15,7 +15,6 @@ import { useNavigate } from 'react-router-dom'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { Button } from '../../shared/components/Button'
-import { confirmEndWorkout } from './BlockView'
 import { mmss } from '../../shared/utils/format'
 import { cursorKeyFromRow, firstCursorOfBlock } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
@@ -32,7 +31,6 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const appendSetToCurrentBlock = useSessionStore((s) => s.appendSetToCurrentBlock)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
-  const endWorkout = useSessionStore((s) => s.endWorkout)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
   const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
   const navigate = useNavigate()
@@ -138,10 +136,15 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   }
 
   const onFinishWorkout = async () => {
-    if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
+    // Review-then-end: route to OverviewScreen so the user can see final
+    // block status before the irreversible end. The confirm + endWorkout
+    // call happens on Overview's End Workout button. Stop the active timer
+    // here since the user has explicitly chosen to leave the active flow.
     await stopActiveTimer()
-    await endWorkout()
-    if (sessionId) navigate(`/session/${sessionId}/summary`, { replace: true })
+    if (session?.workout_id) {
+      onClose()
+      navigate(`/workout/${session.workout_id}`)
+    }
   }
 
   // ─── render ─────────────────────────────────────────────────────────

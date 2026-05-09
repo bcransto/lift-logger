@@ -261,9 +261,18 @@ export function OverviewScreen() {
             Start Workout →
           </Button>
         ) : cursor ? (
-          <Button variant="primary" block onClick={onResume}>
-            Resume Workout →
-          </Button>
+          <>
+            {/* Cursor non-null: review-then-end pair. Resume is the primary
+               action; End Workout is a secondary affordance for the user
+               who came here via "End Workout" in BlockView/BCO and intends
+               to actually finish. End confirms via confirmEndWorkout. */}
+            <Button variant="primary" block onClick={onResume}>
+              Resume Workout →
+            </Button>
+            <Button variant="secondary" block onClick={() => void onEndFromOverview()}>
+              End Workout
+            </Button>
+          </>
         ) : (
           <Button variant="primary" block onClick={() => void onEndFromOverview()}>
             End Workout
