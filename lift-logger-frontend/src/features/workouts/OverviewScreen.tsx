@@ -199,7 +199,16 @@ export function OverviewScreen() {
     if (status === 'pending') {
       // Jump-ahead: current block becomes Skipped (returnable), cursor moves
       // to the target block's first set, route through the intro ceremony.
+      // Confirm first if leaving a different block — a stray tap shouldn't
+      // silently flag the current block skipped, especially mid-progress.
       if (currentBlockId && currentBlockId !== block.id) {
+        const currentBlock = snapshot.blocks.find((b) => b.id === currentBlockId)
+        const currentName = currentBlock?.exercises.map((e) => e.name).join(' + ') ?? 'this block'
+        const { done, total } = blockStatusOf(currentBlock!)
+        const msg = done > 0
+          ? `Skip "${currentName}"? Your current progress (${done} of ${total} sets) will stay; the block is marked skipped so you can return.`
+          : `Skip "${currentName}"?`
+        if (!window.confirm(msg)) return
         await skipBlock(currentBlockId)
       }
       const target = firstCursorOfBlock(snapshot, block.position)
