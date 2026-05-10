@@ -162,6 +162,11 @@ export type SessionState = {
       alsoEndOrphansForWorkoutId?: string
     },
   ) => Promise<void>
+  /** Mark every active session with zero session_sets rows as 'abandoned'.
+   *  Optionally scope to a single workout id. Returns the count abandoned.
+   *  Called from HomeScreen mount (sweep all) and from startSession (sweep
+   *  the workout about to start) so empty back-out sessions don't accumulate. */
+  abandonEmptyActiveSessions: (workoutId?: string) => Promise<number>
   setPendingActuals: (patch: PendingActuals | null) => Promise<void>
   startWorkTimer: (durationSec: number) => Promise<void>
   adjustWorkTimer: (deltaSec: number) => Promise<void>
@@ -434,6 +439,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   async startSession(workoutId: string) {
+    // Clean up any prior empty active session for this workout before
+    // creating a new row. Keeps the "one active session per workout"
+    // invariant even when the user races (start → back out → start).
+    await get().abandonEmptyActiveSessions(workoutId)
     const snapshot = await buildWorkoutSnapshot(workoutId as WorkoutId)
     if (!snapshot) return null
     const now = Date.now()
@@ -976,6 +985,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
     get().resetLocal()
+  },
+
+  async abandonEmptyActiveSessions(workoutId) {
+    // Empty = active + ended_at null + zero session_sets rows. Skipped/done
+    // block flags don't count as work; only logged sets do (matches the
+    // app-wide convention used for `loggedActualKeys`).
+    const candidates = await db.sessions.where('status').equals('active').toArray()
+    const now = Date.now()
+    let count = 0
+    for (const s of candidates) {
+      if (s.ended_at != null) continue
+      if (workoutId && s.workout_id !== workoutId) continue
+      const setCount = await db.session_sets.where('session_id').equals(s.id).count()
+      if (setCount > 0) continue
+      await db.sessions.put({
+        ...s,
+        status: 'abandoned',
+        ended_at: now,
+        paused_at: null,
+        updated_at: now,
+      })
+      count++
+    }
+    return count
   },
 
   async setPendingActuals(patch) {

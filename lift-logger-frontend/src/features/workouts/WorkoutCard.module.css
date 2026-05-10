@@ -53,3 +53,8 @@
   color: var(--text-dim);
   text-transform: uppercase;
 }
+
+.inProgress {
+  color: var(--accent);
+  font-weight: 600;
+}

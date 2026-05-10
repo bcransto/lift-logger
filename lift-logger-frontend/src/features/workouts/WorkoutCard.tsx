@@ -7,9 +7,10 @@ import styles from './WorkoutCard.module.css'
 type Props = {
   workout: WorkoutRow
   liftCount: number
+  inProgress?: boolean
 }
 
-export function WorkoutCard({ workout, liftCount }: Props) {
+export function WorkoutCard({ workout, liftCount, inProgress = false }: Props) {
   const navigate = useNavigate()
 
   const onStar = async (e: React.MouseEvent) => {
@@ -38,7 +39,7 @@ export function WorkoutCard({ workout, liftCount }: Props) {
         </button>
       </div>
       <div className={styles.meta}>
-        {duration} · {lifts} · {last}
+        {duration} · {lifts} · {inProgress ? <span className={styles.inProgress}>IN PROGRESS</span> : last}
       </div>
     </button>
   )

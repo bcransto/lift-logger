@@ -5,6 +5,7 @@ import type { WorkoutRow } from '../../types/schema'
 import { WorkoutCard } from './WorkoutCard'
 import { SyncIndicator } from '../../shared/components/SyncIndicator'
 import { useAutoSync } from '../../sync/useSyncStatus'
+import { useSessionStore } from '../../stores/sessionStore'
 import { dowShort, timeShort, parseJsonArray } from '../../shared/utils/format'
 import styles from './HomeScreen.module.css'
 
@@ -20,6 +21,14 @@ export function HomeScreen() {
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 60_000)
     return () => window.clearInterval(id)
+  }, [])
+
+  // One-shot sweep of empty active sessions on Home mount. Catches the
+  // back-out-from-intro case: user taps Start → BlockIntroScreen → Back
+  // without logging a single set, leaving an orphan active row behind.
+  // Mark-as-abandoned (not delete) so sync round-trips don't resurrect.
+  useEffect(() => {
+    void useSessionStore.getState().abandonEmptyActiveSessions()
   }, [])
 
   const workouts = useLiveQuery(() => db.workouts.toArray(), [])
@@ -42,6 +51,21 @@ export function HomeScreen() {
   const sessionedWorkoutIds = useLiveQuery(async () => {
     const rows = await db.sessions.where('status').equals('completed').toArray()
     return new Set(rows.map((s) => s.workout_id).filter((id) => id !== null) as string[])
+  }, [])
+
+  // Workout IDs that have an active session with at least one logged set.
+  // Filtering on setCount > 0 sidesteps the brief window where a freshly
+  // started session exists but the cleanup sweep hasn't yet marked it
+  // abandoned — without this the pill could flicker on empty sessions.
+  const inProgressWorkoutIds = useLiveQuery(async () => {
+    const actives = await db.sessions.where('status').equals('active').toArray()
+    const result = new Set<string>()
+    for (const s of actives) {
+      if (s.ended_at != null || !s.workout_id) continue
+      const setCount = await db.session_sets.where('session_id').equals(s.id).count()
+      if (setCount > 0) result.add(s.workout_id)
+    }
+    return result
   }, [])
 
   const chips = useMemo(() => {
@@ -123,7 +147,11 @@ export function HomeScreen() {
         <ul className={styles.list}>
           {filtered.map((w) => (
             <li key={w.id}>
-              <WorkoutCard workout={w} liftCount={liftCounts?.get(w.id) ?? 0} />
+              <WorkoutCard
+                workout={w}
+                liftCount={liftCounts?.get(w.id) ?? 0}
+                inProgress={inProgressWorkoutIds?.has(w.id) ?? false}
+              />
             </li>
           ))}
         </ul>
