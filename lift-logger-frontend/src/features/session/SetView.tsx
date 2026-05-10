@@ -141,6 +141,10 @@ export function SetViewOverlay({
     if (!hasPending) return
     await commit({ w: weight, r: reps, d: duration })
     setSeed({ w: weight, r: reps, d: duration })
+    // Tap Update → return to BlockView. The user has explicitly committed;
+    // staying in SetView would obscure that and risk further accidental
+    // edits to the same set on the same screen.
+    onClose()
   }
 
   // Commit strategy varies by edit mode.
@@ -152,8 +156,12 @@ export function SetViewOverlay({
     const nextReps = patch.r !== undefined ? patch.r : reps
     const nextDuration = patch.d !== undefined ? patch.d : duration
 
-    if (isFocused) {
-      // Stash to session.pending_actuals; logSet consumes on Next.
+    // Pending-actuals stash is only for the focused-AND-not-yet-logged set:
+    // logSet picks the stash up when the user finally taps Done. If the
+    // focused set is ALREADY logged (rest mode), we want a direct upsert
+    // to the row — otherwise the seed effect would re-run with the stale
+    // doneRow and reset the input back, exactly the bug in #11/Edit flow.
+    if (isFocused && !isDone) {
       await setPending({
         actual_weight: nextWeight,
         actual_reps: nextReps,
@@ -162,7 +170,7 @@ export function SetViewOverlay({
       return
     }
 
-    // Done set — direct upsert-by-tuple to the existing row.
+    // Done set (or focused-and-done) — direct upsert-by-tuple to the row.
     if (doneRow) {
       const now = Date.now()
       const updated: SessionSetRow = {
