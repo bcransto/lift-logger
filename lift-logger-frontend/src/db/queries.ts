@@ -36,7 +36,12 @@ export function useWorkout(id: WorkoutId | string | undefined): WorkoutRow | und
 }
 
 export function useAllExercises(): ExerciseRow[] | undefined {
-  return useLiveQuery(() => db.exercises.orderBy('name').toArray(), [])
+  // `name` isn't a Dexie index (see src/db/schema.ts), so sort client-side. Fine
+  // at single-user scale — the exercise table stays small (dozens to low hundreds).
+  return useLiveQuery(async () => {
+    const rows = await db.exercises.toArray()
+    return rows.sort((a, b) => a.name.localeCompare(b.name))
+  }, [])
 }
 
 export function useExercisesByIds(ids: string[]): Map<string, ExerciseRow> | undefined {
@@ -44,6 +49,18 @@ export function useExercisesByIds(ids: string[]): Map<string, ExerciseRow> | und
     const rows = await db.exercises.where('id').anyOf(ids).toArray()
     return new Map(rows.map((r) => [r.id, r]))
   }, [ids.join(',')])
+}
+
+// How many block_exercises rows reference this exercise. Drives the delete-blocked
+// state on ExerciseEditScreen — if any workout uses this exercise, deletion is
+// blocked client-side (matching the MCP delete tool's would-be FK behavior).
+// `exercise_id` isn't a Dexie index, so this filters in memory; fine at single-
+// user scale where block_exercises stays small (~hundreds, not millions).
+export function useExerciseUsageCount(id: ExerciseId | string | undefined): number | undefined {
+  return useLiveQuery(async () => {
+    if (!id) return 0
+    return db.block_exercises.filter((be) => be.exercise_id === id).count()
+  }, [id])
 }
 
 export function useActiveSession(): SessionRow | undefined {

@@ -4,7 +4,7 @@ import styles from './TabBar.module.css'
 const TABS = [
   { to: '/', label: 'Workouts' },
   { to: '/exercises', label: 'Exercises' },
-  { to: '/stats', label: 'Stats' },
+  { to: '/sessions', label: 'Sessions' },
   { to: '/settings', label: 'Settings' },
 ] as const
 
