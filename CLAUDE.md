@@ -24,6 +24,8 @@ Old vanilla-app artifacts (root-level `index.html`, `manifest.json`, `sw.js`) we
 
 **All package commands require Node ≥ 20.19** (Vite 7 enforces this). Local dev on macOS uses nvm: `source ~/.nvm/nvm.sh && nvm use 20`.
 
+For Claude Code sessions: see [docs/claude-code-dev-env.md](docs/claude-code-dev-env.md) for the operational details — `.claude/launch.json` wiring, worktree-based previews, port-5173 orphan-vite gotcha, iPhone over Tailscale, headless SSH git pushes.
+
 ### Frontend (`lift-logger-frontend/`)
 
 ```bash
