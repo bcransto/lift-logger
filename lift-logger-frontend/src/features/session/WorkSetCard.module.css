@@ -135,6 +135,14 @@
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0; /* let the column shrink so the button keeps its size */
+  /* When rendered as a <button> (tap-focused state), reset the default
+     button chrome so the body looks identical to the <div> form. */
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .recordBtn {

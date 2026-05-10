@@ -215,15 +215,24 @@ export function WorkSetCard({
   // Tap-focus state (#5a). When the parent has marked this card tap-focused
   // and the card is in a state that supports an action button (logged-with-
   // actuals → Edit; skipped or pending → Start), render the body + button in
-  // the 2-column layout used by Record / Done. Otherwise, the card is a plain
-  // tappable surface that fires onTap to set tap-focus to itself.
+  // the 2-column layout used by Record / Done. The body remains a button
+  // wired to onTap so re-tapping the same card clears tap-focus (toggle off).
+  // Otherwise, the card is a plain tappable surface that fires onTap to set
+  // tap-focus to itself.
   if (tapFocused && (onEdit || onStart)) {
     const isSkipped = actual?.skipped === 1
     const showEdit = isDone && !isSkipped && onEdit
     const showStart = !showEdit && (isSkipped || !isDone) && onStart
     return (
       <div className={cls}>
-        <div className={styles.cardBody}>{body}</div>
+        <button
+          type="button"
+          className={styles.cardBody}
+          onClick={onTap}
+          aria-label="Toggle action button"
+        >
+          {body}
+        </button>
         {showEdit ? (
           <button type="button" className={styles.recordBtn} onClick={onEdit}>
             Edit
