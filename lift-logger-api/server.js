@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const syncRouter = require('./routes/sync');
+const sessionsRouter = require('./routes/sessions');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,6 +18,9 @@ app.get('/health', (req, res) => {
 
 // Sync endpoint
 app.use('/api/sync', syncRouter);
+
+// Session CRUD (delete + PR recompute)
+app.use('/api/sessions', sessionsRouter);
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, 'public')));

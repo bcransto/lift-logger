@@ -5,7 +5,11 @@ import { OverviewScreen } from './features/workouts/OverviewScreen'
 import { BlockIntroScreen } from './features/session/BlockIntroScreen'
 import { BlockView } from './features/session/BlockView'
 import { SummaryScreen } from './features/session/SummaryScreen'
-import { ExercisesTab, StatsTab, SettingsTab } from './features/stubs/StubScreen'
+import { ExercisesListScreen } from './features/exercises/ExercisesListScreen'
+import { ExerciseEditScreen } from './features/exercises/ExerciseEditScreen'
+import { SessionsListScreen } from './features/sessions/SessionsListScreen'
+import { SessionDetailScreen } from './features/sessions/SessionDetailScreen'
+import { SettingsTab } from './features/stubs/StubScreen'
 
 export const router = createBrowserRouter([
   {
@@ -23,8 +27,11 @@ export const router = createBrowserRouter([
           { path: 'summary', element: <SummaryScreen /> },
         ],
       },
-      { path: 'exercises', element: <ExercisesTab /> },
-      { path: 'stats', element: <StatsTab /> },
+      { path: 'exercises', element: <ExercisesListScreen /> },
+      { path: 'exercises/new', element: <ExerciseEditScreen /> },
+      { path: 'exercises/:id/edit', element: <ExerciseEditScreen /> },
+      { path: 'sessions', element: <SessionsListScreen /> },
+      { path: 'sessions/:id', element: <SessionDetailScreen /> },
       { path: 'settings', element: <SettingsTab /> },
     ],
   },
