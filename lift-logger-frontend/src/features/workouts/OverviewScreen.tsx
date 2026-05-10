@@ -3,7 +3,12 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
 import { buildWorkoutSnapshot } from '../../db/queries'
-import { useSessionStore } from '../../stores/sessionStore'
+import {
+  useSessionStore,
+  cursorFromLogged,
+  parseSkippedBlocks,
+  parseDoneBlocks,
+} from '../../stores/sessionStore'
 import { Button } from '../../shared/components/Button'
 import { SessionHeader } from '../../shared/components/SessionHeader'
 import { SetPatternRenderer } from './SetPatternRenderer'
@@ -38,10 +43,17 @@ export function OverviewScreen() {
   const skipBlock = useSessionStore((s) => s.skipBlock)
   const returnToBlock = useSessionStore((s) => s.returnToBlock)
   const jumpTo = useSessionStore((s) => s.jumpTo)
-  const cursor = useSessionStore((s) => s.cursor)
-  const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
-  const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
   const endWorkout = useSessionStore((s) => s.endWorkout)
+  const hydrate = useSessionStore((s) => s.hydrate)
+  // NOTE: store.cursor / store.skippedBlockIds / store.doneBlockIds are
+  // intentionally NOT read here. The store is hydrated for the
+  // most-recently-started active session across ALL workouts, so on a
+  // workout this user isn't currently executing those values would belong
+  // to a different session. We derive per-displayed-session state below
+  // from `activeSession` + `logged`. The store is only resynced (via
+  // `hydrate(activeSession.id)`) when the user actually chooses to resume
+  // this session — after that, BlockView/SetView etc. read store state
+  // that's consistent with the route they're now on.
 
   const workout = useLiveQuery(() => (workoutId ? db.workouts.get(workoutId) : undefined), [workoutId])
 
@@ -110,6 +122,32 @@ export function OverviewScreen() {
     [logged],
   )
 
+  // Per-displayed-session state — derived locally rather than read from the
+  // store. The store's hydrated session may be a different workout entirely
+  // (e.g., user has Six-Station Circuit AND Arm Day Superset both active and
+  // hydrate auto-picked the most-recent), so reading store.cursor on this
+  // screen would mean "Resume" and tile statuses use the wrong session's
+  // coordinates. Deriving locally keeps each workout's overview internally
+  // consistent regardless of which session the store happens to be pointing
+  // at right now.
+  const sessionSkippedBlockIds = useMemo(
+    () => parseSkippedBlocks(activeSession?.skipped_block_ids ?? null),
+    [activeSession?.skipped_block_ids],
+  )
+  const sessionDoneBlockIds = useMemo(
+    () => parseDoneBlocks(activeSession?.done_block_ids ?? null),
+    [activeSession?.done_block_ids],
+  )
+  const sessionCursor = useMemo<Cursor | null>(() => {
+    if (!snapshot || !activeSession) return null
+    return cursorFromLogged(snapshot, logged ?? [], sessionSkippedBlockIds)
+  }, [snapshot, activeSession, logged, sessionSkippedBlockIds])
+  // Aliases that match the prior names so the rest of this file reads the
+  // same. Could be inlined later; kept for diff legibility.
+  const cursor = sessionCursor
+  const skippedBlockIds = sessionSkippedBlockIds
+  const doneBlockIds = sessionDoneBlockIds
+
   // Tap-to-reveal action button per tile (mirrors BlockView's #5a pattern).
   // MUST stay above the early-return below — moving it below would cause a
   // React #310 hooks-order error when `workout`/`snapshot` resolve.
@@ -159,8 +197,20 @@ export function OverviewScreen() {
     if (id) navigate(`/session/${id}/intro/1`, { replace: true })
   }
 
-  const onResume = () => {
+  // Resync the store for the displayed session before any action that
+  // either reads/mutates store state (cursor, doneBlockIds, etc.) or
+  // navigates into a session route. Without this, BlockView/SetView would
+  // mount with the store still pointing at whatever session hydrate
+  // auto-picked, and they'd render the wrong cursor / mutate the wrong
+  // session's state. No-op when the store is already on this session.
+  const ensureStoreOnSession = async (sessionId: string) => {
+    if (useSessionStore.getState().sessionId === sessionId) return
+    await hydrate(sessionId)
+  }
+
+  const onResume = async () => {
     if (!activeSession || !cursor) return
+    await ensureStoreOnSession(activeSession.id)
     navigateToCursor(activeSession.id, cursor)
   }
 
@@ -171,7 +221,16 @@ export function OverviewScreen() {
   const onEndFromOverview = async () => {
     if (!activeSession || !snapshot) return
     if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
-    await endWorkout()
+    // Pass the explicit session id — the store's hydrated sessionId may be
+    // null (user came directly to /workout/:id without going through a
+    // session route, or already ended a session this run leaving an orphan
+    // from a prior crash to surface as "active"). alsoEndOrphans cleans up
+    // any other un-ended sessions for this workout in the same write so
+    // they can't silently resurface as fake "unfinished" tiles next open.
+    await endWorkout(null, {
+      sessionId: activeSession.id,
+      alsoEndOrphansForWorkoutId: workoutId ?? undefined,
+    })
     navigate(`/session/${activeSession.id}/summary`, { replace: true })
   }
 
@@ -215,6 +274,11 @@ export function OverviewScreen() {
     if (!activeSession) return
     const sid = activeSession.id
     setTapFocusBlockId(null)  // collapse tap-focus once an action fires
+    // Every branch below either calls a store action (which mutates the
+    // store's currently-loaded session) or navigates into a session route
+    // (which makes BlockView/SetView read store state). Re-hydrate first
+    // so the store matches the session this screen is displaying.
+    await ensureStoreOnSession(sid)
     const currentBlockId = cursor
       ? snapshot.blocks.find((b) => b.position === cursor.blockPosition)?.id ?? null
       : null

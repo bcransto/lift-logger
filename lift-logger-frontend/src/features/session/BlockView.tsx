@@ -29,6 +29,7 @@ import { UndoToast } from './UndoToast'
 import { SetViewOverlay } from './SetView'
 import { SetLogger, type SetLoggerActuals } from './SetLogger'
 import { BlockCompleteOverlay } from './BlockCompleteOverlay'
+import { Button } from '../../shared/components/Button'
 import type {
   Cursor,
   SessionSetRow,
@@ -63,7 +64,6 @@ export function BlockView() {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const autoSkipUntouchedBetween = useSessionStore((s) => s.autoSkipUntouchedBetween)
   const logSet = useSessionStore((s) => s.logSet)
-  const skipCurrentSet = useSessionStore((s) => s.skipCurrentSet)
   const startActiveTimer = useSessionStore((s) => s.startActiveTimer)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
   const adjustWorkTimer = useSessionStore((s) => s.adjustWorkTimer)
@@ -73,7 +73,7 @@ export function BlockView() {
   const finishBlock = useSessionStore((s) => s.finishBlock)
   const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
-  const { overlay, openOverlay, closeOverlay, showUndo } = useUiStore()
+  const { overlay, openOverlay, closeOverlay } = useUiStore()
 
   // Block position to show BlockCompleteOverlay for (captured at Record-time
   // before the cursor advances, so the overlay shows the block we just finished).
@@ -231,11 +231,6 @@ export function BlockView() {
     : '0:00'
   const liftNumber = cardNumber(snapshot, cursor)
 
-  const onSkipSet = async () => {
-    const undo = await skipCurrentSet()
-    if (undo) showUndo('Set skipped', undo.undoCursor)
-  }
-
   // End Workout is a review-then-end flow: tap End Workout in BlockView (or
   // Finish Workout in BCO) routes the user to OverviewScreen first so they
   // can see final block status (Done/Partial/Skipped) before the irreversible
@@ -380,13 +375,6 @@ export function BlockView() {
 
         <h1 className={styles.display}>{blockTitle}</h1>
 
-        <SessionActions
-          onSkipSet={() => void onSkipSet()}
-          onSkipBlock={() => void onSkipBlock()}
-          onFinishBlock={() => void onFinishBlock()}
-          onEndWorkout={() => void onEnd()}
-        />
-
         <div className={styles.stack}>
           {be.sets.map((t) => {
             const c: Cursor = {
@@ -401,7 +389,12 @@ export function BlockView() {
               c.blockExercisePosition === cursor.blockExercisePosition &&
               c.roundNumber === cursor.roundNumber &&
               c.setNumber === cursor.setNumber
-            const isLogged = Boolean(row)
+            // Skipped rows exist (skipped:1, null actuals) but for the
+            // execution machinery they're "not logged" — when the cursor
+            // returns to a skipped set, we want the focused-pre-log render
+            // path (Record/Go!/Done button), not rest mode. logSet will
+            // overwrite the skipped row on commit.
+            const isLogged = Boolean(row) && row?.skipped !== 1
             const isRestMode = isCursorSet && isLogged
             const isPreTap = isCursorSet && !isLogged
 
@@ -440,6 +433,12 @@ export function BlockView() {
             )
           })}
         </div>
+
+        <SessionActions
+          onSkipBlock={() => void onSkipBlock()}
+          onFinishBlock={() => void onFinishBlock()}
+          onEndWorkout={() => void onEnd()}
+        />
 
         <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
@@ -617,18 +616,14 @@ export function BlockView() {
       <h1 className={styles.display}>{blockTitle}</h1>
       {blockKindTag ? <div className={styles.blockTag}>{blockKindTag}</div> : null}
 
-      <SessionActions
-        onSkipSet={() => void onSkipSet()}
-        onSkipBlock={() => void onSkipBlock()}
-        onFinishBlock={() => void onFinishBlock()}
-        onEndWorkout={() => void onEnd()}
-      />
-
       <div className={styles.stack}>
         {cards.map((c, i) => {
           if (c.kind === 'work') {
             const isFocused = cursorKey(c.cursor) === cursorK
-            const isLogged = Boolean(c.row)
+            // Same skipped-as-not-logged treatment as the single-block
+            // path: a focused-skipped set should render with the Go!/Done
+            // button and accept a re-log via SetLogger.
+            const isLogged = Boolean(c.row) && c.row?.skipped !== 1
             const isPreLogFocused = isFocused && !isLogged
             const cardTapEligible = !isPreLogFocused
             return (
@@ -715,6 +710,12 @@ export function BlockView() {
           )
         })}
       </div>
+
+      <SessionActions
+        onSkipBlock={() => void onSkipBlock()}
+        onFinishBlock={() => void onFinishBlock()}
+        onEndWorkout={() => void onEnd()}
+      />
 
       <UndoToast onUndo={(cur) => undoSkip(cur)} />
 
@@ -808,27 +809,35 @@ function RestWithNext({
 }
 
 // ─── SessionActions ────────────────────────────────────────────────
-// The bottom action row on BlockView (both single + legacy paths). Four
-// fixed buttons in fixed order: Skip Set · Skip Block · Finish Block · End
-// Workout.
+// The bottom action row on BlockView (both single + legacy paths). Three
+// fixed buttons in fixed order: Skip Block · Finish Block · End Workout.
+// Stacked + full-width to match BlockCompleteOverlay's `.actions` layout
+// so the visual language is consistent between in-block and post-block
+// action surfaces.
+//
+// "Skip Set" used to live here but is now redundant — tap-focus → Start
+// on any future set auto-skips every untouched set strictly between the
+// current cursor and the tap target (including the abandoned cursor's own
+// set). Tapping the very next set therefore reproduces Skip Set's exact
+// effect, plus there's no equivalent for "skip THIS set when there's no
+// future set" because in that situation Finish Block / End Workout do
+// the user's actual intent. The store's `skipCurrentSet` action is
+// intentionally retained for potential reuse from other surfaces.
 
 function SessionActions({
-  onSkipSet,
   onSkipBlock,
   onFinishBlock,
   onEndWorkout,
 }: {
-  onSkipSet: () => void
   onSkipBlock: () => void
   onFinishBlock: () => void
   onEndWorkout: () => void
 }) {
   return (
     <div className={styles.secondaryActions}>
-      <button className={styles.actionBtn} onClick={onSkipSet}>Skip Set</button>
-      <button className={styles.actionBtn} onClick={onSkipBlock}>Skip Block</button>
-      <button className={styles.actionBtn} onClick={onFinishBlock}>Finish Block</button>
-      <button className={styles.actionBtn} onClick={onEndWorkout}>End Workout</button>
+      <Button variant="secondary" block onClick={onSkipBlock}>Skip Block</Button>
+      <Button variant="secondary" block onClick={onFinishBlock}>Finish Block</Button>
+      <Button variant="secondary" block onClick={onEndWorkout}>End Workout</Button>
     </div>
   )
 }

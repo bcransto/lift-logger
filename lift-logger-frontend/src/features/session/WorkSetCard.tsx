@@ -100,12 +100,19 @@ export function WorkSetCard({
    // writes skipped:1 with null actuals; logSet writes skipped:0). Order in
    // the cls list matters — skipped overrides done's tint via later-rule wins.
   const cardIsSkipped = actual?.skipped === 1
+  // Visual override: when the cursor returns to a skipped set, drop the
+  // dashed-amber treatment so the card reads as "active and waiting for
+  // input" — matches the focused-pre-log appearance. The row is still
+  // skipped:1; logSet will overwrite it on commit. Without this the card
+  // keeps the strikethrough/faded look even though it's the next thing the
+  // user is going to do.
+  const showSkippedStyling = cardIsSkipped && !isFocused
   const tapFocusActive = Boolean(tapFocused) && Boolean(onEdit || onStart)
   const cls = [
     styles.card,
     isFocused ? styles.focused : '',
     isDone && !cardIsSkipped ? styles.done : '',
-    cardIsSkipped ? styles.skipped : '',
+    showSkippedStyling ? styles.skipped : '',
     target.is_peak && !isFocused ? styles.peak : '',
     onTap ? styles.tappable : '',
     onRecord ? styles.cardWithRecord : '',

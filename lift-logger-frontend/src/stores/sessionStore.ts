@@ -112,7 +112,12 @@ export type SessionState = {
   pendingActuals: PendingActuals | null
 
   // actions
-  hydrate: () => Promise<void>
+  /** Hydrate from Dexie. Without `sessionId`, picks the most-recently-started
+   *  active session across all workouts. Pass an explicit id to swap context
+   *  to a specific session — used when a screen (e.g., OverviewScreen) needs
+   *  the store's cursor to match the session that screen is displaying, even
+   *  if it isn't the most-recent globally. */
+  hydrate: (sessionId?: string) => Promise<void>
   startSession: (workoutId: string) => Promise<SessionId | null>
   logSet: (input?: Partial<LoggedSetInput>) => Promise<void>
   jumpTo: (cursor: Cursor) => void
@@ -142,7 +147,21 @@ export type SessionState = {
   skipBlock: (blockId: string) => Promise<void>
   finishBlock: (blockId: string) => Promise<void>
   returnToBlock: (blockId: string) => Promise<void>
-  endWorkout: (notes?: string | null) => Promise<void>
+  endWorkout: (
+    notes?: string | null,
+    options?: {
+      /** End this specific session id instead of the store's hydrated one.
+       *  Needed when OverviewScreen displays a session not currently in
+       *  the store (e.g., user came from Home directly to /workout/:id and
+       *  is ending an orphan from a prior crashed session). */
+      sessionId?: string
+      /** When set, also abandon any OTHER active sessions for this
+       *  workout id (status='abandoned', ended_at=now). Defensive
+       *  cleanup so multi-active-session states from crashes/multi-tab
+       *  can't resurface as fake "unfinished" sessions on next open. */
+      alsoEndOrphansForWorkoutId?: string
+    },
+  ) => Promise<void>
   setPendingActuals: (patch: PendingActuals | null) => Promise<void>
   startWorkTimer: (durationSec: number) => Promise<void>
   adjustWorkTimer: (deltaSec: number) => Promise<void>
@@ -262,7 +281,11 @@ function normalizeSnapshotForV3(snapshot: WorkoutSnapshot): WorkoutSnapshot {
  * to restore execution position after a reload. Skipped blocks are ignored so
  * we don't land the user inside a block they explicitly chose to bypass.
  */
-function cursorFromLogged(
+// Exported so OverviewScreen can derive its own per-session cursor instead of
+// relying on the global store's hydrated cursor (which belongs to whatever
+// session hydrate picked — i.e., the most-recently-started across ALL active
+// sessions, possibly a different workout entirely).
+export function cursorFromLogged(
   snapshot: WorkoutSnapshot,
   logged: SessionSetRow[],
   skippedBlockIds: ReadonlySet<string>,
@@ -275,7 +298,7 @@ function cursorFromLogged(
   return null
 }
 
-function parseSkippedBlocks(raw: string | null): Set<string> {
+export function parseSkippedBlocks(raw: string | null): Set<string> {
   if (!raw) return new Set()
   try {
     const v = JSON.parse(raw)
@@ -286,7 +309,7 @@ function parseSkippedBlocks(raw: string | null): Set<string> {
 }
 
 // Same shape as parseSkippedBlocks; kept distinct for self-documenting call sites.
-function parseDoneBlocks(raw: string | null): Set<string> {
+export function parseDoneBlocks(raw: string | null): Set<string> {
   return parseSkippedBlocks(raw)
 }
 
@@ -365,9 +388,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   pendingActuals: null,
   restSkippedAt: null,
 
-  async hydrate() {
-    const actives = await db.sessions.where('status').equals('active').toArray()
-    const active = actives.sort((a, b) => b.started_at - a.started_at)[0]
+  async hydrate(sessionId) {
+    let active: SessionRow | undefined
+    if (sessionId) {
+      // Explicit context swap — used when a screen needs the store to match
+      // a specific session (e.g., OverviewScreen.onResume for a workout that
+      // isn't the globally most-recent). Falls through to the auto-pick path
+      // if the requested session is missing or already ended.
+      const found = await db.sessions.get(sessionId)
+      if (found && found.ended_at == null) active = found
+    }
+    if (!active) {
+      const actives = await db.sessions.where('status').equals('active').toArray()
+      active = actives.sort((a, b) => b.started_at - a.started_at)[0]
+    }
     if (!active) {
       set({ hydrated: true })
       return
@@ -885,29 +919,61 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ skippedBlockIds: nextSkipped, cursor: target ?? get().cursor, timer: IDLE_TIMER })
   },
 
-  async endWorkout(notes) {
+  async endWorkout(notes, options) {
     // Delegate to completeSession; duration_sec accounting subtracts paused time below.
-    const { sessionId, pausedAt, accumulatedPausedMs } = get()
-    if (!sessionId) return
+    const { sessionId: storeSessionId, pausedAt, accumulatedPausedMs } = get()
+    // Caller may pass an explicit id (OverviewScreen does this when ending
+    // a session it found in Dexie that may not match the store's hydrated
+    // one — e.g., the store's session was already ended this run, leaving
+    // an orphan from a prior crash to surface as the "current" active
+    // session in Dexie's filter).
+    const targetId = options?.sessionId ?? storeSessionId
+    if (!targetId) return
     // If the session is paused when the user hits End, fold the current pause interval
     // into accumulatedPausedMs so it doesn't count toward duration_sec.
-    let finalAccum = accumulatedPausedMs
-    if (pausedAt != null) finalAccum += Date.now() - pausedAt
+    // Pause accounting only applies when the store is actually tracking the
+    // target session; for orphan-end-from-Overview the store's pause state
+    // is unrelated, so skip it.
+    const useStorePauseAccounting = targetId === storeSessionId
+    let finalAccum = useStorePauseAccounting ? accumulatedPausedMs : 0
+    if (useStorePauseAccounting && pausedAt != null) finalAccum += Date.now() - pausedAt
     const now = Date.now()
-    const ses = await db.sessions.get(sessionId)
+    const ses = await db.sessions.get(targetId)
     if (ses) {
       const rawDurationSec = Math.round((now - ses.started_at) / 1000)
-      const activeDurationSec = Math.max(0, rawDurationSec - Math.round(finalAccum / 1000))
+      const baseAccum = useStorePauseAccounting ? finalAccum : ses.accumulated_paused_ms ?? 0
+      const activeDurationSec = Math.max(0, rawDurationSec - Math.round(baseAccum / 1000))
       await db.sessions.put({
         ...ses,
         status: 'completed',
         ended_at: now,
         duration_sec: activeDurationSec,
-        accumulated_paused_ms: finalAccum,
+        accumulated_paused_ms: baseAccum,
         paused_at: null,
         notes: notes ?? ses.notes ?? null,
         updated_at: now,
       })
+    }
+    // Defensive orphan cleanup: end any other active sessions for the same
+    // workout id. Marks them 'abandoned' (not 'completed') so summaries
+    // don't accidentally claim credit for unfinished work. Without this,
+    // a stale active session from a crash silently re-surfaces the next
+    // time the user opens this workout.
+    const orphanWorkoutId = options?.alsoEndOrphansForWorkoutId
+    if (orphanWorkoutId) {
+      const orphans = await db.sessions
+        .where('workout_id').equals(orphanWorkoutId)
+        .filter((s) => s.id !== targetId && s.ended_at == null)
+        .toArray()
+      for (const o of orphans) {
+        await db.sessions.put({
+          ...o,
+          status: 'abandoned',
+          ended_at: now,
+          paused_at: null,
+          updated_at: now,
+        })
+      }
     }
     get().resetLocal()
   },
