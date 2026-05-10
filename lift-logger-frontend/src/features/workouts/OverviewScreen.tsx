@@ -110,6 +110,11 @@ export function OverviewScreen() {
     [logged],
   )
 
+  // Tap-to-reveal action button per tile (mirrors BlockView's #5a pattern).
+  // MUST stay above the early-return below — moving it below would cause a
+  // React #310 hooks-order error when `workout`/`snapshot` resolve.
+  const [tapFocusBlockId, setTapFocusBlockId] = useState<string | null>(null)
+
   if (!workout || !snapshot) {
     return <div className={styles.empty}>Loading…</div>
   }
@@ -180,11 +185,10 @@ export function OverviewScreen() {
     const setKey = `${c.blockExercisePosition}.${c.roundNumber}.${c.setNumber}`
     navigate(`/session/${sessionId}/active/${c.blockPosition}/${setKey}`)
   }
-  // Tap-to-reveal action button per tile (mirrors BlockView's #5a pattern).
-  // Tap the tile → toggle tap-focus on/off. The contextual action button
+  // Tap → toggle tap-focus on/off. The contextual action button
   // (Edit / Cont. / Start) appears within the tap-focused tile. Tapping the
   // button fires the action below; tapping a different tile moves focus.
-  const [tapFocusBlockId, setTapFocusBlockId] = useState<string | null>(null)
+  // (`tapFocusBlockId` state itself lives above the early-return guard.)
   const onTileToggleFocus = (blockId: string) => {
     setTapFocusBlockId((prev) => (prev === blockId ? null : blockId))
   }
