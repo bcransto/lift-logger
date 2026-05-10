@@ -23,14 +23,26 @@ export function WorkoutCard({ workout, liftCount, inProgress = false }: Props) {
     })
   }
 
+  const onCardClick = () => navigate(`/workout/${workout.id}`)
+  const onCardKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onCardClick()
+    }
+  }
+
   const duration = workout.est_duration ? `${workout.est_duration} MIN` : '— MIN'
   const lifts = `${liftCount} ${liftCount === 1 ? 'LIFT' : 'LIFTS'}`
   const last = workout.last_performed ? relativeDate(workout.last_performed).toUpperCase() : 'NEW'
 
   return (
-    <button
+    <div
       className={`${styles.card} ${workout.starred ? styles.starred : ''}`}
-      onClick={() => navigate(`/workout/${workout.id}`)}
+      role="button"
+      tabIndex={0}
+      aria-label={workout.name}
+      onClick={onCardClick}
+      onKeyDown={onCardKey}
     >
       <div className={styles.row}>
         <div className={styles.title}>{workout.name}</div>
@@ -41,6 +53,6 @@ export function WorkoutCard({ workout, liftCount, inProgress = false }: Props) {
       <div className={styles.meta}>
         {duration} · {lifts} · {inProgress ? <span className={styles.inProgress}>IN PROGRESS</span> : last}
       </div>
-    </button>
+    </div>
   )
 }
