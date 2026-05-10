@@ -28,7 +28,7 @@ Old vanilla-app artifacts (root-level `index.html`, `manifest.json`, `sw.js`) we
 
 ```bash
 npm install
-npm run dev                 # Vite dev server on :5173 (preview sometimes 5174), proxies /api to backend
+npm run dev                 # Vite dev server on :5173, proxies /api to backend (set VITE_API_PORT=3100 locally)
 npm run build               # tsc -b && vite build → ../lift-logger-api/public/
 npm run typecheck           # tsc --noEmit
 npm run test                # Vitest watch mode
@@ -39,6 +39,27 @@ npm run test:run src/features/session/sessionEngine.test.ts   # one file
 Env vars:
 - `VITE_USE_MOCK_SYNC=true` → bypass `/api/sync`, use the in-memory `src/sync/mockServer.ts` (default **false**; real backend)
 - `VITE_API_PORT=3100` → dev proxy target port (default `3000`; set to `3100` locally because macOS Chrome sandbox reserves `3000`)
+- `TAILSCALE_DEV=1` → switches Vite HMR to `clientPort: 443` for live-testing on a real iPhone over Tailscale Serve. Required when accessing the dev server through `https://<mac>.tail2a85a6.ts.net`; **omit for plain localhost dev** or HMR will loop trying to dial port 443.
+
+#### Live-testing on a real iPhone
+
+The Mac dev server is exposed to the iPhone over Tailscale Serve (real HTTPS cert, tailnet-only, no router config). Per-session:
+
+```bash
+# terminal 1 — backend
+PORT=3100 node server.js
+
+# terminal 2 — frontend (note both env vars)
+TAILSCALE_DEV=1 VITE_API_PORT=3100 npm run dev
+
+# terminal 3 — expose frontend port via Tailscale (one-time per session)
+tailscale serve --bg http://localhost:5173
+# teardown: tailscale serve --https=443 off
+```
+
+Then open `https://bradfords-macbook-air.tail2a85a6.ts.net` on the iPhone. Vite proxies `/api/*` to the backend at `localhost:3100`, so only the frontend port needs Tailscale exposure. Vite's `server.host`, `allowedHosts`, and the env-gated `hmr.clientPort` are wired in [vite.config.ts](lift-logger-frontend/vite.config.ts).
+
+**Seed-then-open**: if you populate the dev DB *after* the iPhone has already loaded the empty version, sync will return zero rows because the client persisted a high `lastSync` timestamp. Bump `updated_at` on all rows to "now" or clear the iOS site data. Full reference (gotchas + alternative stacks): `~/AppDev/Documents/iOS-dev-testing.md`.
 
 ### Backend (`lift-logger-api/`)
 
@@ -148,7 +169,9 @@ Round-boundary rest fallback uses [`restForCursor` / `restAtBoundary`](lift-logg
 
 Multi-round blocks (`rounds > 1`) render a `──── R{n} / {total} ────` divider between rounds on both `BlockIntroScreen` (all rounds including R1) and the active `BlockView` stack (between rounds, skipping R1).
 
-The secondary action row above the card stack is **Skip Set · Skip Block · Finish Block · End Workout** on both render paths (factored as `<SessionActions>` inside [BlockView.tsx](lift-logger-frontend/src/features/session/BlockView.tsx)). Skip Block adds the block to `skippedBlockIds` and advances. Finish Block adds it to `doneBlockIds` and opens the BlockCompleteOverlay. **End Workout no longer goes straight to /summary** — it routes the user to OverviewScreen so they can review final block status before the irreversible end. The actual `confirmEndWorkout(snapshot, logged, skippedBlockIds)` confirm + `endWorkout()` happens on Overview's End Workout button.
+The secondary action row above the card stack is **Skip Block · Finish Block · End Workout** on both render paths (factored as `<SessionActions>` inside [BlockView.tsx](lift-logger-frontend/src/features/session/BlockView.tsx)). Skip Block adds the block to `skippedBlockIds` and advances. Finish Block adds it to `doneBlockIds` and opens the BlockCompleteOverlay. **End Workout no longer goes straight to /summary** — it routes the user to OverviewScreen so they can review final block status before the irreversible end. The actual `confirmEndWorkout(snapshot, logged, skippedBlockIds)` confirm + `endWorkout()` happens on Overview's End Workout button.
+
+A "Skip Set" button used to live in this row but was removed once tap-focus → Start auto-skips intermediate untouched sets — tapping the very next set's Start button reproduces Skip Set's effect, plus there's no equivalent for "skip THIS set when there's no future set to tap" because in that situation Finish Block / End Workout cover the user's actual intent. The store still exposes `skipCurrentSet` + `undoSkip` and BlockView still mounts `<UndoToast>` — both intact for potential reuse from other surfaces, just with no producer in BlockView itself today.
 
 ### BlockCompleteOverlay — post-block interstitial
 
@@ -200,6 +223,10 @@ The cursor temporarily pointing into a Done block is fine — `blockStatusOf` pr
 End Workout fires `confirmEndWorkout(snapshot, logged, skippedBlockIds)` (block-only copy: `X unlogged · Y skipped blocks`).
 
 **Active session selector** (both OverviewScreen + SessionHeader): pick the **most-recently-started** active session, not Dexie's default lex-by-id ordering. Defensive against multi-active-session states from crashes/multi-tab.
+
+**OverviewScreen state is per-displayed-session, not global store**. The store's `cursor` / `skippedBlockIds` / `doneBlockIds` belong to whatever session `hydrate()` auto-picked (most-recent across **all** workouts). On a workout the user isn't currently executing, those values would belong to a different session entirely — using them on this overview would render the wrong tile statuses and build a Resume URL with the wrong session's coordinates. OverviewScreen instead derives `cursor`/`skipped`/`done` locally from `activeSession` + `logged` via the exported `cursorFromLogged` / `parseSkippedBlocks` / `parseDoneBlocks` helpers. **Before any handler that navigates into a session route OR mutates the store** (Resume, tile actions like `returnToBlock`/`skipBlock`/`jumpTo`), it calls `ensureStoreOnSession(activeSession.id)` which resyncs the store via `hydrate(activeSession.id)` — that variant of hydrate looks up a specific session id rather than auto-picking. Without this, BlockView/SetView would mount with the store still pointing at the old session and render mismatched cursor coordinates against the URL's snapshot. (SessionHeader's "→ Block" anchor stays globally-scoped — it's "zip back to your most-recent session," not context-aware.)
+
+**Orphan cleanup on End-from-Overview**: `endWorkout(notes, options)` accepts an explicit `options.sessionId` plus `options.alsoEndOrphansForWorkoutId`. OverviewScreen passes both — without the explicit id, the action falls back to the store's hydrated `sessionId` and silently no-ops when the user is ending a session that was hydrated *during this run and already reset* (orphan from a prior crash now surfacing as the most-recently-started active). The orphan-cleanup pass marks every other un-ended session for the same workout `status: 'abandoned'` (not `'completed'` — the user didn't explicitly end them, they're just being cleared). Without this pass, ending the visible session leaves the next-most-recent orphan to surface as "unfinished" on the next open of that workout — whack-a-mole.
 
 ### Shared `<SessionHeader>` (top nav)
 
@@ -329,13 +356,15 @@ The old SQLite database `data/liftlogger.db` is preserved on disk as a safety ne
 - **Inputs use `font-size: 16px`** to prevent iOS Safari auto-zoom. `inputmode="decimal"` / `"numeric"` picks the compact iOS number pad.
 - **`logSet` has an `advance: boolean` option.** Default is true. The single-block flow and the **auto-log-on-work-timer-zero path in circuit/superset blocks** pass `advance: false` so the log doesn't race the rest timer. In both cases the Next button (or RestCard's zero-cross callback) owns the advance + skipRest. **Exception**: when the focused cursor is `focusedIsLastOverall`, the auto-log path passes `advance: true` regardless of `rest_after_sec` — there's no rest card or finishBlock tap to wait on, the workout is logically over.
 - **`Skip Set` writes a session_sets row with `skipped: 1`** (schema v4) — distinct from a real log. The OverviewScreen's "done count" excludes skipped rows (`loggedActualKeys` filters `r.skipped !== 1`), but `isBlockFullyAccounted` includes them so a block can auto-finish with all sets accounted for even if most are skips.
+- **`isLogged` in BlockView excludes skipped rows** (`Boolean(row) && row?.skipped !== 1`) on both render paths. Without this, a focused-skipped set (cursor returned via tap-focus → Start) renders in rest mode with no Go!/Done button — because the row exists, `isPreTap` is false, `onRecord` isn't passed, and WorkSetCard's `showFocusedActions` filters out the focused-and-`isDone` case. WorkSetCard mirrors this with `showSkippedStyling = cardIsSkipped && !isFocused` so the dashed-amber treatment drops when the cursor is back on the set. The underlying `skipped:1` row stays put; logSet overwrites it on commit.
 - **`done_block_ids` and `skipped_block_ids` are mutually exclusive per id.** `finishBlock(id)` clears any skip flag on that id; `skipBlock(id)` clears any done flag. The advance() exclude set is `union(skipped, done)` — `unionBlockIds()` helper in sessionStore.
 - **Use `cursorKey()` / `cursorKeyFromRow()`** instead of hand-building `${bp}.${be}.${r}.${s}` strings — those diverged once already and the helpers prevent drift.
 - **`BlockIntroScreen` superset/circuit grid wraps to 2 columns when `sortedExercises.length > 2`.** Don't switch the inline `gridTemplateColumns` back to `repeat(${sortedExercises.length}, 1fr)` — at iPhone width (375px) anything past 2 cards per row gets smooshed (this bit us with The Gauntlet's 4-exercise finisher; commit `9d89a6d`).
 - **Local backend vs Pi.** The local backend (`lift-logger-api/data/iron.db`) and the Pi's production DB are entirely separate. An MCP write from Claude.ai's Cloudflare connector goes to prod by default. When copying rows between the two, bump `updated_at` to `Date.now()` — clients won't pull a row whose `updated_at` is older than their `lastSync`.
 - **`tsc --noEmit` ≠ `tsc -b`.** Local typecheck (`npm run typecheck`) sometimes accepts type narrowings that the Pi's incremental project build rejects (seen with optional `block.rest_after_sec` in commit `5c514cc`). Before deploying, run `npx tsc -b --force` to mirror the Pi's strictness.
 - **Forward affordance label**: the right-corner header button is `Sets →` on BlockView (descend to SetView). Don't replace the arrow with a kebab `⋮` — that reads as a dropdown menu, which it isn't.
+- **`TAILSCALE_DEV=1` is read by `vite.config.ts` at server startup** — flipping the env var requires restarting the dev server (HMR can't hot-reload its own config). The flag adds `hmr.clientPort: 443 / protocol: 'wss'`; without it the iPhone's HMR websocket dials port 5173 (not exposed via Tailscale Serve) and the page never finishes wiring up.
 - **Tailscale SSH may prompt for re-auth** before deploys. If `ssh bcransto@pinto` returns "Tailscale SSH requires an additional check" with a login URL, open it in a browser and wait for confirmation before retrying.
 - **`git push` over HTTPS may hang silently** when the macOS keychain credential helper returns `-128` (cancelled / unable to prompt). Symptom: `git push origin main` runs forever with no output, no error. Cause: git tries to prompt for username/password via TTY, which the Bash tool doesn't have. Diagnosis: `GIT_TERMINAL_PROMPT=0 git push origin main` will fail fast with `could not read Username for 'https://github.com'`. Fix: push interactively from a terminal once to refresh keychain creds, then subsequent automated pushes work.
-- **Hooks-order trap**: `useState` / `useEffect` / `useMemo` calls must precede ALL early-return branches in a component. React #310 ("Rendered more hooks than during the previous render") fires when a hook is conditionally skipped on first render and called on later renders. Bit us twice in `OverviewScreen.tsx` (commits `bb70a13`, plus the prior fix). The codebase doesn't yet run `eslint-plugin-react-hooks` — flagged for setup.
+- **Hooks-order trap**: `useState` / `useEffect` / `useMemo` calls must precede ALL early-return branches in a component. React #310 ("Rendered more hooks than during the previous render") fires when a hook is conditionally skipped on first render and called on later renders. Bit us twice in `OverviewScreen.tsx` (commits `bb70a13`, plus the prior fix). Now caught by `react-hooks/rules-of-hooks` in [lift-logger-frontend/eslint.config.js](lift-logger-frontend/eslint.config.js); blocks `npm run build`. Requires Node ≥18 — `.nvmrc` pins 22.17.1, run `nvm use` in `lift-logger-frontend/` first.
 - **`tap-to-reveal` action buttons** (BlockView set cards + OverviewScreen tiles) follow the same pattern: tap → tap-focus toggles to that card/tile → contextual button appears. Re-tap same target → focus clears. Tap different target → focus moves. Mutually exclusive across the surface. The body remains a `<button onClick={onTap}>` even when tap-focused — that's what enables toggle-off (commit `4cc76dc` was the fix when WorkSetCard's tap-focused branch had the body as a non-tappable `<div>`).
