@@ -33,7 +33,6 @@ import type {
 } from '../types/schema'
 import type { ExerciseId, SessionId, SessionSetId, WorkoutId } from '../types/ids'
 import { uuid } from '../shared/utils/uuid'
-import { parseJsonArray } from '../shared/utils/format'
 
 // ─── types ────────────────────────────────────────────────────────────
 
@@ -1215,7 +1214,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const ex = await db.exercises.get(newExerciseId)
     if (!ex) return
 
-    const altIds = parseJsonArray<string>(ex.alt_exercise_ids) as ExerciseId[]
+    // Keep the slot's existing alt_exercise_ids — they describe the user's
+    // preferred alternates for this position in the workout, not properties
+    // of the exercise we're swapping in. The user picked this exercise
+    // explicitly; their slot-level alts (if any) still apply.
     const nextSnapshot: WorkoutSnapshot = {
       ...snapshot,
       blocks: snapshot.blocks.map((b) =>
@@ -1226,7 +1228,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
               exercises: b.exercises.map((e) =>
                 e.id !== be.id
                   ? e
-                  : { ...e, exercise_id: ex.id as ExerciseId, name: ex.name, alt_exercise_ids: altIds },
+                  : { ...e, exercise_id: ex.id as ExerciseId, name: ex.name },
               ),
             },
       ),
