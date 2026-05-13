@@ -122,6 +122,10 @@ export function BlockView() {
   useEffect(() => {
     if (!sessionId || !cursor || !mountSyncedRef.current || !snapshot) return
     if (overlay === 'blockComplete') return
+    // If the user has navigated outside the session route (e.g. BCO →
+    // Workout overview), don't snap them back. The cursor sync is only
+    // meaningful while we're on a /session/ URL.
+    if (!window.location.pathname.startsWith(`/session/${sessionId}/`)) return
     const currentBpInUrl = Number.parseInt(bpStr ?? '1', 10)
     if (cursor.blockPosition !== currentBpInUrl && isNewBlock(snapshot, cursor)) {
       navigate(`/session/${sessionId}/intro/${cursor.blockPosition}`, { replace: true })
