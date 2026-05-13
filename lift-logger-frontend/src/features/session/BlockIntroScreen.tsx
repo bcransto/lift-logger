@@ -8,6 +8,7 @@ import { SessionHeader } from '../../shared/components/SessionHeader'
 import { RestTimerCard } from './RestTimerCard'
 import { SetCard } from './SetCard'
 import { SavePreferencePrompt } from './SavePreferencePrompt'
+import { ExercisePicker } from './ExercisePicker'
 import { mmss } from '../../shared/utils/format'
 import { setsForRound } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
@@ -37,12 +38,14 @@ export function BlockIntroScreen() {
   const applyEdit = useSessionStore((s) => s.applyEdit)
   const savePreference = useSessionStore((s) => s.savePreference)
   const skipBlock = useSessionStore((s) => s.skipBlock)
+  const swapExerciseInBlock = useSessionStore((s) => s.swapExerciseInBlock)
 
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
   }, [])
+  const [swapPickerOpen, setSwapPickerOpen] = useState(false)
 
   if (!session || !snapshot) return <div className={styles.empty}>Loading…</div>
 
@@ -320,10 +323,27 @@ export function BlockIntroScreen() {
         <Button variant="primary" block onClick={onReady}>
           {ctaLabel}
         </Button>
+        {block.kind === 'single' && !hasProgressInBlock ? (
+          <Button variant="secondary" block onClick={() => setSwapPickerOpen(true)}>
+            Swap Exercise
+          </Button>
+        ) : null}
         <Button variant="secondary" block onClick={() => void onSkipBlock()}>
           Skip Block
         </Button>
       </div>
+
+      {swapPickerOpen && block.exercises[0] ? (
+        <ExercisePicker
+          currentExerciseId={block.exercises[0].exercise_id}
+          currentExerciseName={block.exercises[0].name}
+          onPick={async (newId) => {
+            await swapExerciseInBlock(block.id, newId)
+            setSwapPickerOpen(false)
+          }}
+          onCancel={() => setSwapPickerOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }

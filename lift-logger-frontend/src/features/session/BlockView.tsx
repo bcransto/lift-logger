@@ -29,6 +29,7 @@ import { UndoToast } from './UndoToast'
 import { SetViewOverlay } from './SetView'
 import { SetLogger, type SetLoggerActuals } from './SetLogger'
 import { BlockCompleteOverlay } from './BlockCompleteOverlay'
+import { ExercisePicker } from './ExercisePicker'
 import { Button } from '../../shared/components/Button'
 import type {
   Cursor,
@@ -73,6 +74,7 @@ export function BlockView() {
   const finishBlock = useSessionStore((s) => s.finishBlock)
   const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
+  const swapExerciseInBlock = useSessionStore((s) => s.swapExerciseInBlock)
   const { overlay, openOverlay, closeOverlay } = useUiStore()
 
   // Block position to show BlockCompleteOverlay for (captured at Record-time
@@ -84,6 +86,8 @@ export function BlockView() {
   // the same card; moves on tap of a different card. Cleared when SetView
   // closes (Edit), cursor jumps somewhere unrelated, or the block changes.
   const [tapFocusKey, setTapFocusKey] = useState<string | null>(null)
+  // Swap-exercise picker open flag (single-block flow only).
+  const [swapPickerOpen, setSwapPickerOpen] = useState(false)
   // Initial cursor for SetView when opened via Edit. null = use execution cursor.
   const [setViewInitialCursor, setSetViewInitialCursor] = useState<Cursor | null>(null)
 
@@ -358,6 +362,15 @@ export function BlockView() {
       closeOverlay()
     }
 
+    // Swap Exercise is only offered when the user hasn't touched the block —
+    // any session_sets row (logged OR skipped) disables it. Once a set is
+    // committed the targets are anchored to the current exercise's identity.
+    const hasAnyRowInBlock = (logged ?? []).some((r) => r.block_position === block.position)
+    const onSwapPick = async (newId: string) => {
+      await swapExerciseInBlock(block.id, newId)
+      setSwapPickerOpen(false)
+    }
+
     return (
       <div className={styles.root}>
         <SessionHeader
@@ -439,6 +452,7 @@ export function BlockView() {
         </div>
 
         <SessionActions
+          onSwapExercise={hasAnyRowInBlock ? undefined : () => setSwapPickerOpen(true)}
           onSkipBlock={() => void onSkipBlock()}
           onFinishBlock={() => void onFinishBlock()}
           onEndWorkout={() => void onEnd()}
@@ -459,6 +473,14 @@ export function BlockView() {
           <BlockCompleteOverlay
             blockPosition={blockCompletePos}
             onClose={onBlockCompleteClose}
+          />
+        ) : null}
+        {swapPickerOpen ? (
+          <ExercisePicker
+            currentExerciseId={be.exercise_id}
+            currentExerciseName={be.name}
+            onPick={onSwapPick}
+            onCancel={() => setSwapPickerOpen(false)}
           />
         ) : null}
       </div>
@@ -829,16 +851,22 @@ function RestWithNext({
 // intentionally retained for potential reuse from other surfaces.
 
 function SessionActions({
+  onSwapExercise,
   onSkipBlock,
   onFinishBlock,
   onEndWorkout,
 }: {
+  /** Single-block-only, and only when no sets are logged in the block. */
+  onSwapExercise?: () => void
   onSkipBlock: () => void
   onFinishBlock: () => void
   onEndWorkout: () => void
 }) {
   return (
     <div className={styles.secondaryActions}>
+      {onSwapExercise ? (
+        <Button variant="secondary" block onClick={onSwapExercise}>Swap Exercise</Button>
+      ) : null}
       <Button variant="secondary" block onClick={onSkipBlock}>Skip Block</Button>
       <Button variant="secondary" block onClick={onFinishBlock}>Finish Block</Button>
       <Button variant="secondary" block onClick={onEndWorkout}>End Workout</Button>

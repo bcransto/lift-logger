@@ -20,6 +20,7 @@ import {
   setsForRound,
 } from '../session/sessionEngine'
 import { parseJsonArray, relativeDate } from '../../shared/utils/format'
+import { ExercisePicker } from '../session/ExercisePicker'
 import type { Cursor, SessionSetRow, SnapshotBlock, WorkoutSnapshot } from '../../types/schema'
 import styles from './OverviewScreen.module.css'
 
@@ -45,6 +46,7 @@ export function OverviewScreen() {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const endWorkout = useSessionStore((s) => s.endWorkout)
   const hydrate = useSessionStore((s) => s.hydrate)
+  const swapExerciseInBlock = useSessionStore((s) => s.swapExerciseInBlock)
   // NOTE: store.cursor / store.skippedBlockIds / store.doneBlockIds are
   // intentionally NOT read here. The store is hydrated for the
   // most-recently-started active session across ALL workouts, so on a
@@ -152,6 +154,8 @@ export function OverviewScreen() {
   // MUST stay above the early-return below — moving it below would cause a
   // React #310 hooks-order error when `workout`/`snapshot` resolve.
   const [tapFocusBlockId, setTapFocusBlockId] = useState<string | null>(null)
+  // Block currently being swapped (ExercisePicker overlay target). Null = closed.
+  const [swapTargetBlockId, setSwapTargetBlockId] = useState<string | null>(null)
 
   if (!workout || !snapshot) {
     return <div className={styles.empty}>Loading…</div>
@@ -250,6 +254,23 @@ export function OverviewScreen() {
   // (`tapFocusBlockId` state itself lives above the early-return guard.)
   const onTileToggleFocus = (blockId: string) => {
     setTapFocusBlockId((prev) => (prev === blockId ? null : blockId))
+  }
+
+  const onTileSwap = async (blockId: string) => {
+    if (!activeSession) return
+    // The swap action reads sessionId/snapshot from the store; make sure
+    // it's hydrated to the session we're displaying before we open the
+    // picker, otherwise the swap could land on a different session's
+    // snapshot.
+    await ensureStoreOnSession(activeSession.id)
+    setSwapTargetBlockId(blockId)
+    setTapFocusBlockId(null)
+  }
+
+  const onSwapPick = async (newExerciseId: string) => {
+    if (!swapTargetBlockId) return
+    await swapExerciseInBlock(swapTargetBlockId, newExerciseId)
+    setSwapTargetBlockId(null)
   }
 
   // Label per status — drives the visible button. Done blocks have no
@@ -358,6 +379,10 @@ export function OverviewScreen() {
         {snapshot.blocks.map((b, bi) => {
           const { status, done, total } = blockStatusOf(b)
           const actionLabel = activeSession ? actionLabelFor(status) : null
+          // Swap eligibility — single block + no session_sets rows. Status
+          // 'done_*' implies at least one row; 'skipped_partial' / 'current'
+          // with done > 0 also; gate on done === 0 to cover them all.
+          const swapEligible = Boolean(activeSession) && b.kind === 'single' && done === 0
           return (
             <BlockRow
               key={b.id}
@@ -370,6 +395,7 @@ export function OverviewScreen() {
               tapFocused={tapFocusBlockId === b.id}
               actionLabel={actionLabel}
               onAction={activeSession && actionLabel ? () => void onTileAction(b, status) : null}
+              onSwap={swapEligible ? () => void onTileSwap(b.id) : null}
             />
           )
         })}
@@ -399,6 +425,20 @@ export function OverviewScreen() {
           </Button>
         )}
       </div>
+
+      {swapTargetBlockId ? (() => {
+        const target = snapshot.blocks.find((b) => b.id === swapTargetBlockId)
+        const be = target?.exercises[0]
+        if (!target || !be) return null
+        return (
+          <ExercisePicker
+            currentExerciseId={be.exercise_id}
+            currentExerciseName={be.name}
+            onPick={onSwapPick}
+            onCancel={() => setSwapTargetBlockId(null)}
+          />
+        )
+      })() : null}
     </div>
   )
 }
@@ -419,6 +459,7 @@ function BlockRow({
   tapFocused,
   actionLabel,
   onAction,
+  onSwap,
 }: {
   block: SnapshotBlock
   startNumber: number
@@ -434,6 +475,10 @@ function BlockRow({
   /** Fired on action-button tap. Null when the tile has no action available
       (pre-session or unmapped status). */
   onAction?: (() => void) | null
+  /** Swap-exercise affordance — only set when the block is single-kind and
+      has no session_sets rows. Renders as a secondary button below the
+      primary action. */
+  onSwap?: (() => void) | null
 }) {
   const grouped = block.kind === 'superset' || block.kind === 'circuit'
   const label = block.kind === 'superset' ? 'SUPERSET' : block.kind === 'circuit' ? 'CIRCUIT' : null
@@ -489,11 +534,18 @@ function BlockRow({
       ) : (
         <div className={styles.blockTap}>{content}</div>
       )}
-      {tapFocused && actionLabel && onAction ? (
+      {tapFocused && ((actionLabel && onAction) || onSwap) ? (
         <div className={styles.tileActionRow}>
-          <button type="button" className={styles.tileAction} onClick={onAction}>
-            {actionLabel}
-          </button>
+          {actionLabel && onAction ? (
+            <button type="button" className={styles.tileAction} onClick={onAction}>
+              {actionLabel}
+            </button>
+          ) : null}
+          {onSwap ? (
+            <button type="button" className={styles.tileSwap} onClick={onSwap}>
+              Swap Exercise
+            </button>
+          ) : null}
         </div>
       ) : null}
     </li>

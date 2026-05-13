@@ -33,6 +33,7 @@ import type {
 } from '../types/schema'
 import type { ExerciseId, SessionId, SessionSetId, WorkoutId } from '../types/ids'
 import { uuid } from '../shared/utils/uuid'
+import { parseJsonArray } from '../shared/utils/format'
 
 // ─── types ────────────────────────────────────────────────────────────
 
@@ -184,6 +185,13 @@ export type SessionState = {
   stopActiveTimer: () => Promise<void>
   /** Append one set to the current block inheriting actuals as targets. */
   appendSetToCurrentBlock: () => Promise<void>
+  /**
+   * Swap the exercise in a single-kind block for another. Mutates the
+   * session's workout_snapshot only (template untouched). Caller is
+   * responsible for guarding against blocks with logs — store does a final
+   * safety check and no-ops if any session_sets row exists for the block.
+   */
+  swapExerciseInBlock: (blockId: string, newExerciseId: string) => Promise<void>
   /** Advance the cursor one step (respecting skipped blocks). */
   advanceCursor: () => void
 }
@@ -1186,6 +1194,54 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         setNumber: nextSetNumber,
       },
     })
+  },
+
+  async swapExerciseInBlock(blockId, newExerciseId) {
+    const { sessionId, snapshot } = get()
+    if (!sessionId || !snapshot) return
+    const block = snapshot.blocks.find((b) => b.id === blockId)
+    if (!block || block.kind !== 'single' || block.exercises.length === 0) return
+    const be = block.exercises[0]!
+    if (be.exercise_id === newExerciseId) return
+
+    // Final safety: refuse if any session_sets row exists for this block.
+    // Caller (BlockView) already hides the button; this is belt-and-suspenders.
+    const existing = await db.session_sets
+      .where('session_id').equals(sessionId)
+      .filter((r) => r.block_position === block.position)
+      .count()
+    if (existing > 0) return
+
+    const ex = await db.exercises.get(newExerciseId)
+    if (!ex) return
+
+    const altIds = parseJsonArray<string>(ex.alt_exercise_ids) as ExerciseId[]
+    const nextSnapshot: WorkoutSnapshot = {
+      ...snapshot,
+      blocks: snapshot.blocks.map((b) =>
+        b.position !== block.position
+          ? b
+          : {
+              ...b,
+              exercises: b.exercises.map((e) =>
+                e.id !== be.id
+                  ? e
+                  : { ...e, exercise_id: ex.id as ExerciseId, name: ex.name, alt_exercise_ids: altIds },
+              ),
+            },
+      ),
+    }
+
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (ses) {
+      await db.sessions.put({
+        ...ses,
+        workout_snapshot: JSON.stringify(nextSnapshot),
+        updated_at: now,
+      })
+    }
+    set({ snapshot: nextSnapshot })
   },
 }))
 
