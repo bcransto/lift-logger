@@ -278,3 +278,38 @@ div.blockTap {
   cursor: pointer;
 }
 .tileSwap:active { transform: scale(0.98); }
+
+/* + Add Exercise — bottom of the block list when an active session is in
+   progress. Same shape as tileSwap but stands alone (not nested under a tile). */
+.addExerciseBtn {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  min-height: 44px;
+  margin-top: var(--space-2);
+  background: var(--bg-elev-1);
+  color: var(--text);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.addExerciseBtn:active { transform: scale(0.99); }
+
+/* Destructive text-link under the bottom CTA. Visible only when the workout
+   has no active session. Muted red, small, centered. */
+.deleteLink {
+  align-self: center;
+  margin-top: var(--space-3);
+  background: transparent;
+  border: none;
+  color: #d05050;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+.deleteLink:active { opacity: 0.7; }

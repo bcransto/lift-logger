@@ -11,15 +11,17 @@ import styles from './ExercisePicker.module.css'
 
 type Props = {
   /** Exercise currently in the block — hidden from the list so the user
-      isn't offered the no-op. */
-  currentExerciseId: string
-  /** Name shown in the header as context. */
-  currentExerciseName: string
+      isn't offered the no-op. Null for append-mode (no current exercise). */
+  currentExerciseId: string | null
+  /** Name shown in the header as context. Null for append-mode. */
+  currentExerciseName: string | null
+  /** Header label override. Defaults to "SWAP EXERCISE" / "Pick a replacement". */
+  mode?: 'swap' | 'append'
   onPick: (exerciseId: string) => void | Promise<void>
   onCancel: () => void
 }
 
-export function ExercisePicker({ currentExerciseId, currentExerciseName, onPick, onCancel }: Props) {
+export function ExercisePicker({ currentExerciseId, currentExerciseName, mode = 'swap', onPick, onCancel }: Props) {
   const exercises = useAllExercises()
   const [query, setQuery] = useState('')
 
@@ -27,18 +29,23 @@ export function ExercisePicker({ currentExerciseId, currentExerciseName, onPick,
     const rows = exercises ?? []
     const q = query.trim().toLowerCase()
     return rows.filter((ex) => {
-      if (ex.id === currentExerciseId) return false
+      if (currentExerciseId && ex.id === currentExerciseId) return false
       if (!q) return true
       return ex.name.toLowerCase().includes(q)
     })
   }, [exercises, query, currentExerciseId])
 
+  const eyebrow = mode === 'append' ? 'ADD EXERCISE' : 'SWAP EXERCISE'
+  const title = mode === 'append' ? 'Pick an exercise' : 'Pick a replacement'
+
   return (
     <div className={styles.overlay}>
       <header className={styles.header}>
-        <div className={styles.eyebrow}>SWAP EXERCISE</div>
-        <h1 className={styles.display}>Pick a replacement</h1>
-        <div className={styles.currentLine}>CURRENT · {currentExerciseName}</div>
+        <div className={styles.eyebrow}>{eyebrow}</div>
+        <h1 className={styles.display}>{title}</h1>
+        {currentExerciseName ? (
+          <div className={styles.currentLine}>CURRENT · {currentExerciseName}</div>
+        ) : null}
       </header>
 
       <input

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
@@ -47,6 +47,7 @@ export function OverviewScreen() {
   const endWorkout = useSessionStore((s) => s.endWorkout)
   const hydrate = useSessionStore((s) => s.hydrate)
   const swapExerciseInBlock = useSessionStore((s) => s.swapExerciseInBlock)
+  const appendBlockToCurrentSession = useSessionStore((s) => s.appendBlockToCurrentSession)
   // NOTE: store.cursor / store.skippedBlockIds / store.doneBlockIds are
   // intentionally NOT read here. The store is hydrated for the
   // most-recently-started active session across ALL workouts, so on a
@@ -156,6 +157,16 @@ export function OverviewScreen() {
   const [tapFocusBlockId, setTapFocusBlockId] = useState<string | null>(null)
   // Block currently being swapped (ExercisePicker overlay target). Null = closed.
   const [swapTargetBlockId, setSwapTargetBlockId] = useState<string | null>(null)
+  // ExercisePicker open in "append" mode (+ Add Exercise CTA).
+  const [addExerciseOpen, setAddExerciseOpen] = useState(false)
+
+  // Soft-delete redirect: if this workout was deleted (locally or via sync),
+  // bounce the user to Home rather than showing an empty Overview.
+  useEffect(() => {
+    if (workout?.deleted_at != null) {
+      navigate('/', { replace: true })
+    }
+  }, [workout?.deleted_at, navigate])
 
   if (!workout || !snapshot) {
     return <div className={styles.empty}>Loading…</div>
@@ -273,6 +284,25 @@ export function OverviewScreen() {
     setSwapTargetBlockId(null)
   }
 
+  const onAppendExercisePick = async (exerciseId: string) => {
+    if (!activeSession) return
+    await ensureStoreOnSession(activeSession.id)
+    const ex = await db.exercises.get(exerciseId)
+    const target = await appendBlockToCurrentSession(exerciseId, ex?.name ?? 'Exercise')
+    setAddExerciseOpen(false)
+    if (target) {
+      navigate(`/session/${activeSession.id}/intro/${target.blockPosition}`)
+    }
+  }
+
+  const onDeleteWorkout = async () => {
+    if (!workout) return
+    if (!window.confirm(`Delete "${workout.name}"? This can't be undone from the app.`)) return
+    const now = Date.now()
+    await db.workouts.put({ ...workout, deleted_at: now, updated_at: now })
+    navigate('/', { replace: true })
+  }
+
   // Label per status — drives the visible button. Done blocks have no
   // pre-existing tile action (it's the new Edit affordance).
   const actionLabelFor = (status: BlockStatus): 'Edit' | 'Cont.' | 'Start' | null => {
@@ -369,6 +399,7 @@ export function OverviewScreen() {
 
       <div className={styles.pills}>
         {workout.est_duration ? <span className={styles.pill}>≈ {workout.est_duration} MIN</span> : null}
+        <span className={styles.pill}>CREATED: {relativeDate(workout.created_at).toUpperCase()}</span>
         {workout.last_performed ? (
           <span className={styles.pill}>LAST: {relativeDate(workout.last_performed).toUpperCase()}</span>
         ) : null}
@@ -401,6 +432,16 @@ export function OverviewScreen() {
         })}
       </ol>
 
+      {activeSession ? (
+        <button
+          type="button"
+          className={styles.addExerciseBtn}
+          onClick={() => setAddExerciseOpen(true)}
+        >
+          + Add Exercise
+        </button>
+      ) : null}
+
       <div className={styles.startRow}>
         {!activeSession ? (
           <Button variant="primary" block onClick={onStart}>
@@ -426,6 +467,16 @@ export function OverviewScreen() {
         )}
       </div>
 
+      {!activeSession ? (
+        <button
+          type="button"
+          className={styles.deleteLink}
+          onClick={() => void onDeleteWorkout()}
+        >
+          Delete workout
+        </button>
+      ) : null}
+
       {swapTargetBlockId ? (() => {
         const target = snapshot.blocks.find((b) => b.id === swapTargetBlockId)
         const be = target?.exercises[0]
@@ -439,6 +490,16 @@ export function OverviewScreen() {
           />
         )
       })() : null}
+
+      {addExerciseOpen ? (
+        <ExercisePicker
+          mode="append"
+          currentExerciseId={null}
+          currentExerciseName={null}
+          onPick={onAppendExercisePick}
+          onCancel={() => setAddExerciseOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }

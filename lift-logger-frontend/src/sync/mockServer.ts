@@ -72,6 +72,7 @@ function seed(): {
     created_at: t,
     updated_at: t,
     last_performed: t - 3 * 24 * 60 * 60 * 1000,
+    deleted_at: null,
   }
 
   const blockA1: WorkoutBlockRow = {
@@ -171,6 +172,7 @@ function seed(): {
     created_at: t,
     updated_at: t,
     last_performed: null,
+    deleted_at: null,
   }
 
   const blockB1: WorkoutBlockRow = {

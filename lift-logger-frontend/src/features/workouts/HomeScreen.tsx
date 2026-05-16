@@ -31,7 +31,10 @@ export function HomeScreen() {
     void useSessionStore.getState().abandonEmptyActiveSessions()
   }, [])
 
-  const workouts = useLiveQuery(() => db.workouts.toArray(), [])
+  const workouts = useLiveQuery(
+    () => db.workouts.filter((w) => w.deleted_at == null).toArray(),
+    [],
+  )
   const liftCounts = useLiveQuery(async () => {
     const all = await db.block_exercises.toArray()
     const blocks = await db.workout_blocks.toArray()

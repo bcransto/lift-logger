@@ -56,7 +56,9 @@ const TABLE_COLUMNS = {
   ],
   workouts: [
     'name', 'description', 'tags', 'starred', 'est_duration',
-    'created_by', 'created_at', 'last_performed'
+    'created_by', 'created_at', 'last_performed',
+    // v5
+    'deleted_at'
   ],
   workout_blocks: [
     'workout_id', 'position', 'kind', 'rounds', 'rest_after_sec',

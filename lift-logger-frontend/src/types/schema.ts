@@ -59,6 +59,9 @@ export type WorkoutRow = {
   created_at: number
   updated_at: number
   last_performed: number | null
+  // v5: soft-delete. Non-null means the workout is hidden from Home and the
+  // OverviewScreen redirects home. LWW sync carries this field to the server.
+  deleted_at: number | null
 }
 
 export type WorkoutBlockRow = {

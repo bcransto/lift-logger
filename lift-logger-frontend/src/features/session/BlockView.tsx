@@ -200,20 +200,20 @@ export function BlockView() {
     return () => { cancelled = true }
   }, [sessionId, cursor?.blockPosition, cursor?.blockExercisePosition, cursor?.roundNumber, cursor?.setNumber])
 
-  // Cursor becomes null after the final logSet advance — usually meaning
-  // the workout is done. EXCEPTION: if the user explicitly Skipped any
-  // blocks, those are still pending in their mind. Route to OverviewScreen
-  // so they can see skipped tiles + decide to resume one or end the workout
-  // instead of being silently shoved into the summary.
+  // Cursor becomes null after the final logSet advance — the user is done
+  // executing. Always route to OverviewScreen (not /summary) so they get a
+  // last-minute review: tap a done tile to add a set, + Add Exercise for a
+  // bonus block, or tap End Workout to actually finish. /summary is only
+  // a defensive fallback when the session has no associated workout_id.
   useEffect(() => {
     if (sessionId && snapshot && !cursor) {
-      if (skippedBlockIds.size > 0 && session?.workout_id) {
+      if (session?.workout_id) {
         navigate(`/workout/${session.workout_id}`, { replace: true })
       } else {
         navigate(`/session/${sessionId}/summary`, { replace: true })
       }
     }
-  }, [cursor, sessionId, snapshot, navigate, skippedBlockIds, session])
+  }, [cursor, sessionId, snapshot, navigate, session])
 
   // Clear the captured block-complete position whenever the overlay variant
   // is no longer 'blockComplete' so it can't leak into a future BCO mount.

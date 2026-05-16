@@ -16,7 +16,9 @@ function parseJsonArray(s) {
 function listWorkouts({ tag, starred, createdBy } = {}) {
   let sql = 'SELECT * FROM workouts';
   const params = {};
-  const where = [];
+  // Soft-deleted workouts (deleted_at IS NOT NULL) are hidden from the agent —
+  // they're tombstones the frontend uses to prune Home.
+  const where = ['deleted_at IS NULL'];
   if (starred === true) where.push('starred = 1');
   if (tag) {
     where.push('tags LIKE @tag');
@@ -26,7 +28,7 @@ function listWorkouts({ tag, starred, createdBy } = {}) {
     where.push('created_by = @createdBy');
     params.createdBy = createdBy;
   }
-  if (where.length) sql += ' WHERE ' + where.join(' AND ');
+  sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY name ASC';
 
   const workouts = db.prepare(sql).all(params);

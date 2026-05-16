@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS workouts (
     CHECK (created_by IN ('user', 'agent')),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  last_performed INTEGER
+  last_performed INTEGER,
+  deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_workouts_starred ON workouts(starred);
 CREATE INDEX IF NOT EXISTS idx_workouts_last_performed ON workouts(last_performed);

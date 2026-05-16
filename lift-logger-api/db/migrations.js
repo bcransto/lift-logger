@@ -6,7 +6,7 @@
  * auto-init that happens when requiring database.js.
  */
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 const MIGRATIONS = [
   // v1 is the baseline covered by schema.js; no-op migration body, just records the version.
@@ -135,6 +135,17 @@ const MIGRATIONS = [
       const sCols = database.prepare('PRAGMA table_info(sessions)').all();
       if (!sCols.some((c) => c.name === 'done_block_ids')) {
         database.exec('ALTER TABLE sessions ADD COLUMN done_block_ids TEXT');
+      }
+    }
+  },
+  // v5 — soft-delete on workouts. Frontend Delete button sets deleted_at=now;
+  // LWW sync propagates; HomeScreen filters out rows with deleted_at != null.
+  {
+    version: 5,
+    up(database) {
+      const cols = database.prepare('PRAGMA table_info(workouts)').all();
+      if (!cols.some((c) => c.name === 'deleted_at')) {
+        database.exec('ALTER TABLE workouts ADD COLUMN deleted_at INTEGER');
       }
     }
   }
