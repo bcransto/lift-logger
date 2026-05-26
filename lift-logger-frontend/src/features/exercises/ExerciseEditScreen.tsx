@@ -19,7 +19,7 @@ import { useExerciseUsageCount } from '../../db/queries'
 import type { ExerciseRow, MovementType } from '../../types/schema'
 import { asExerciseId } from '../../types/ids'
 import { Button } from '../../shared/components/Button'
-import { genId } from '../../shared/util/genId'
+import { uuid } from '../../shared/utils/uuid'
 import { parseJsonArray } from '../../shared/utils/format'
 import styles from './ExerciseEditScreen.module.css'
 
@@ -106,7 +106,7 @@ export function ExerciseEditScreen() {
     const movement: MovementType | null = movementType === '' ? null : movementType
 
     const row: ExerciseRow = {
-      id: isEdit && existing ? existing.id : asExerciseId(genId('ex')),
+      id: isEdit && existing ? existing.id : asExerciseId(uuid('ex')),
       name: trimmedName,
       equipment: JSON.stringify(equipment),
       muscle_groups: JSON.stringify(muscleGroups),
