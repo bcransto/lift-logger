@@ -75,7 +75,7 @@ node scripts/seed-circuit-4.js 3000       # Four-Station Finisher (circuit, 4 ex
 node scripts/seed-circuit-6.js 3000       # Six-Station Circuit  (circuit, 6 ex)
 ```
 
-On macOS, use `PORT=3100 node server.js` — `:3000` is occupied by a sandbox WSGI proxy that intercepts requests. **`npm run smoke` is currently broken** against the IRON schema (leftover assertions from the pre-IRON vanilla schema — references `sessions.name`, `session_sets.weight/reps/performed_at`, etc.). Don't rely on it; fix or delete before trusting its output.
+On macOS, use `PORT=3100 node server.js` — `:3000` is occupied by a sandbox WSGI proxy that intercepts requests.
 
 ### MCP (`lift-logger-mcp/`)
 
