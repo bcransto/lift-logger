@@ -529,11 +529,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       done_block_ids: null,
     }
     await db.sessions.put(row)
-    // Mark workout.last_performed for Home sort ordering.
-    const w = await db.workouts.get(workoutId)
-    if (w) {
-      await db.workouts.put({ ...w, last_performed: now, updated_at: now })
-    }
     set({
       sessionId: id,
       snapshot,
@@ -636,6 +631,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       skipped: 0,
     }
     await db.session_sets.put(row)
+
+    // Bump workouts.last_performed on each real log (skipped:0). Lives here
+    // rather than in startSession because the field means "last time a set
+    // was performed" — empty back-outs from BlockIntroScreen shouldn't promote
+    // a workout to the top of Home's "Last performed" sort. (Issue #8.)
+    const w = await db.workouts.get(snapshot.workout_id)
+    if (w) {
+      await db.workouts.put({ ...w, last_performed: now, updated_at: now })
+    }
 
     // Auto-finish: if every set in this block now has a non-skipped log row,
     // flip the block to Done & Complete without requiring a Finish tap.
