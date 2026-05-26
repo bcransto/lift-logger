@@ -163,8 +163,8 @@ export function BlockIntroScreen() {
                         r.set_number === s.set_number,
                     )
                     // No 'current' state on the intro — this is a plan preview,
-                    // not the executing view. Only done / peak / pending.
-                    const state = match ? 'done' : s.is_peak ? 'peak' : 'pending'
+                    // not the executing view. Only done / pending.
+                    const state = match ? 'done' : 'pending'
                     return (
                       <SetCard
                         key={`${s.set_number}`}
@@ -270,7 +270,7 @@ export function BlockIntroScreen() {
                               rr.set_number === s.set_number,
                           )
                           // Intro is a plan preview — no 'current' focus here.
-                          const state = match ? 'done' : s.is_peak ? 'peak' : 'pending'
+                          const state = match ? 'done' : 'pending'
                           return (
                             <SetCard
                               key={`${r}-${s.set_number}`}

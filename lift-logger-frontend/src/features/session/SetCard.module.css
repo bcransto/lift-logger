@@ -19,10 +19,6 @@
   color: var(--text-dim);
 }
 
-.card.peak {
-  border-color: var(--accent-2);
-}
-
 .label {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -33,10 +29,6 @@
 
 .current .label {
   color: var(--accent);
-}
-
-.peak .label {
-  color: var(--accent-2);
 }
 
 .weight {

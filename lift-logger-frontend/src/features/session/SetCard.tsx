@@ -4,7 +4,7 @@ import styles from './SetCard.module.css'
 
 type Props = {
   target: SnapshotSetTarget
-  state: 'pending' | 'current' | 'done' | 'peak'
+  state: 'pending' | 'current' | 'done'
   actual?: { weight: number | null; reps: number | null; duration: number | null } | null
   onEdit?: (patch: Partial<SnapshotSetTarget>) => void
 }
@@ -17,7 +17,7 @@ export function SetCard({ target, state, actual, onEdit }: Props) {
 
   return (
     <div
-      className={`${styles.card} ${styles[state]} ${target.is_peak && state !== 'current' ? styles.peak : ''}`}
+      className={`${styles.card} ${styles[state]}`}
       onClick={() => onEdit && setExpanded((v) => !v)}
       role={onEdit ? 'button' : undefined}
     >

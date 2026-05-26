@@ -49,10 +49,6 @@
   text-decoration: line-through;
 }
 
-.peak {
-  border-color: var(--accent-2);
-}
-
 .exName {
   font-family: var(--font-body);
   font-weight: 700;
@@ -70,10 +66,6 @@
 
 .focused .label {
   color: var(--accent);
-}
-
-.peak .label {
-  color: var(--accent-2);
 }
 
 .values {

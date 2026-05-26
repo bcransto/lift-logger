@@ -113,7 +113,6 @@ export function WorkSetCard({
     isFocused ? styles.focused : '',
     isDone && !cardIsSkipped ? styles.done : '',
     showSkippedStyling ? styles.skipped : '',
-    target.is_peak && !isFocused ? styles.peak : '',
     onTap ? styles.tappable : '',
     onRecord ? styles.cardWithRecord : '',
     showFocusedActions ? styles.cardWithActions : '',
