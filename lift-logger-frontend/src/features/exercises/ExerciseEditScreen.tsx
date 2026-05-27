@@ -125,7 +125,9 @@ export function ExerciseEditScreen() {
   const onDelete = async () => {
     if (!isEdit || !existing) return
     if (usageCount !== undefined && usageCount > 0) return // safety: button is disabled in this state
-    const ok = window.confirm(`Delete "${existing.name}"? This can't be undone.`)
+    const ok = window.confirm(
+      `Delete "${existing.name}"? Past session history is preserved — only the exercise definition is removed.`,
+    )
     if (!ok) return
     await db.exercises.delete(existing.id)
     navigate('/exercises')
