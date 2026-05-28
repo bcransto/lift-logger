@@ -30,6 +30,7 @@ import { SetViewOverlay } from './SetView'
 import { SetLogger, type SetLoggerActuals } from './SetLogger'
 import { BlockCompleteOverlay } from './BlockCompleteOverlay'
 import { ExercisePicker } from './ExercisePicker'
+import { LastAndPrRow } from './LastAndPrRow'
 import { Button } from '../../shared/components/Button'
 import type {
   Cursor,
@@ -391,6 +392,12 @@ export function BlockView() {
         </SessionHeader>
 
         <h1 className={styles.display}>{blockTitle}</h1>
+        <LastAndPrRow
+          exerciseId={be.exercise_id}
+          sessionId={sessionId}
+          exerciseName={be.name}
+          showName={false}
+        />
 
         <div className={styles.stack}>
           {be.sets.map((t) => {
@@ -641,6 +648,15 @@ export function BlockView() {
 
       <h1 className={styles.display}>{blockTitle}</h1>
       {blockKindTag ? <div className={styles.blockTag}>{blockKindTag}</div> : null}
+      {bes.map((be) => (
+        <LastAndPrRow
+          key={`lpr-${be.id}`}
+          exerciseId={be.exercise_id}
+          sessionId={sessionId}
+          exerciseName={be.name}
+          showName={bes.length > 1}
+        />
+      ))}
 
       <div className={styles.stack}>
         {cards.map((c, i) => {
