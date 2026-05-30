@@ -9,7 +9,7 @@
 //                        + stops timer. On last set, Record opens the
 //                        BlockCompleteOverlay instead of a rest card.
 //   - 'superset'/'circuit' → legacy round-major stack with inline Next buttons
-//                            and a terminal Finish Block card. Kept until the
+//                            and a terminal "Mark as Done" card. Kept until the
 //                            multi-kind flows get their own design pass.
 //
 // Header: LEFT = Workout view button, RIGHT = Set view button (for editing
@@ -71,7 +71,6 @@ export function BlockView() {
   const adjustWorkTimer = useSessionStore((s) => s.adjustWorkTimer)
   const advanceCursor = useSessionStore((s) => s.advanceCursor)
   const skipRest = useSessionStore((s) => s.skipRest)
-  const skipBlock = useSessionStore((s) => s.skipBlock)
   const finishBlock = useSessionStore((s) => s.finishBlock)
   const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
@@ -251,12 +250,12 @@ export function BlockView() {
     }
   }
 
-  // Block-level Skip and Finish share the same confirmation pattern:
-  // "X unlogged · Y skipped" if either count > 0, plain "Skip/Finish this
-  // block?" otherwise. Skip Block = "I'll come back to this" (marks block
-  // skipped, advances). Finish Block = "I'm done with this block — mark it
-  // complete" (adds to doneBlockIds, opens BCO).
-  const buildBlockConfirm = (verb: 'Skip' | 'Finish') => {
+  // Finish (labeled "Mark as Done" in the UI) confirms when the block has
+  // loose sets: "X unlogged · Y skipped" if either count > 0, plain "Finish
+  // this block?" otherwise. Finish = "I'm done with this block — mark it
+  // complete" (adds to doneBlockIds, opens BCO). Skip Block was removed from
+  // this surface in issue #22 (tap-focus → Start already covers skip-ahead).
+  const buildBlockConfirm = (verb: 'Finish') => {
     const unlogged = countUnloggedInBlock(block, bes, loggedByKey)
     const skippedCount = (logged ?? []).filter((r) => r.block_position === block.position && r.skipped === 1).length
     const parts: string[] = []
@@ -265,12 +264,6 @@ export function BlockView() {
     return parts.length > 0
       ? `${verb} this block? ${parts.join(' · ')}.`
       : `${verb} this block?`
-  }
-
-  const onSkipBlock = async () => {
-    const msg = buildBlockConfirm('Skip')
-    if (!window.confirm(msg)) return
-    await skipBlock(block.id)
   }
 
   const onFinishBlock = async () => {
@@ -460,7 +453,6 @@ export function BlockView() {
 
         <SessionActions
           onSwapExercise={hasAnyRowInBlock ? undefined : () => setSwapPickerOpen(true)}
-          onSkipBlock={() => void onSkipBlock()}
           onFinishBlock={() => void onFinishBlock()}
           onEndWorkout={() => void onEnd()}
         />
@@ -736,7 +728,7 @@ export function BlockView() {
             )
           }
           // c.kind === 'finishBlock'
-          const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Finish Block'
+          const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Mark as Done'
           return (
             <div key={`f${i}`} className={styles.finishBlockWrap}>
               <button
@@ -754,7 +746,6 @@ export function BlockView() {
       </div>
 
       <SessionActions
-        onSkipBlock={() => void onSkipBlock()}
         onFinishBlock={() => void onFinishBlock()}
         onEndWorkout={() => void onEnd()}
       />
@@ -851,30 +842,25 @@ function RestWithNext({
 }
 
 // ─── SessionActions ────────────────────────────────────────────────
-// The bottom action row on BlockView (both single + legacy paths). Three
-// fixed buttons in fixed order: Skip Block · Finish Block · End Workout.
-// Stacked + full-width to match BlockCompleteOverlay's `.actions` layout
-// so the visual language is consistent between in-block and post-block
-// action surfaces.
+// The bottom action row on BlockView (both single + legacy paths). Two
+// fixed buttons in fixed order: Mark as Done · End Workout. Stacked +
+// full-width to match BlockCompleteOverlay's `.actions` layout so the
+// visual language is consistent between in-block and post-block surfaces.
 //
-// "Skip Set" used to live here but is now redundant — tap-focus → Start
-// on any future set auto-skips every untouched set strictly between the
-// current cursor and the tap target (including the abandoned cursor's own
-// set). Tapping the very next set therefore reproduces Skip Set's exact
-// effect, plus there's no equivalent for "skip THIS set when there's no
-// future set" because in that situation Finish Block / End Workout do
-// the user's actual intent. The store's `skipCurrentSet` action is
-// intentionally retained for potential reuse from other surfaces.
+// Block-level "Skip Block" used to live here too but was removed in issue
+// #22: tap-focus → Start on any future set already auto-skips every
+// untouched set strictly between the current cursor and the tap target, so
+// skipping the rest of a block is reachable without a dedicated button. The
+// store's `skipBlock` / `skipCurrentSet` actions are intentionally retained
+// for OverviewScreen + potential reuse from other surfaces.
 
 function SessionActions({
   onSwapExercise,
-  onSkipBlock,
   onFinishBlock,
   onEndWorkout,
 }: {
   /** Single-block-only, and only when no sets are logged in the block. */
   onSwapExercise?: () => void
-  onSkipBlock: () => void
   onFinishBlock: () => void
   onEndWorkout: () => void
 }) {
@@ -883,8 +869,7 @@ function SessionActions({
       {onSwapExercise ? (
         <Button variant="secondary" block onClick={onSwapExercise}>Swap Exercise</Button>
       ) : null}
-      <Button variant="secondary" block onClick={onSkipBlock}>Skip Block</Button>
-      <Button variant="secondary" block onClick={onFinishBlock}>Finish Block</Button>
+      <Button variant="secondary" block onClick={onFinishBlock}>Mark as Done</Button>
       <Button variant="secondary" block onClick={onEndWorkout}>End Workout</Button>
     </div>
   )
