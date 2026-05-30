@@ -17,6 +17,8 @@ import {
   cursorKey,
   cursorKeyFromRow,
   firstCursorOfBlock,
+  fixedBlockIdsForReorder,
+  nextReorderableIndex,
   setsForRound,
 } from '../session/sessionEngine'
 import { parseJsonArray, relativeDate } from '../../shared/utils/format'
@@ -48,6 +50,7 @@ export function OverviewScreen() {
   const hydrate = useSessionStore((s) => s.hydrate)
   const swapExerciseInBlock = useSessionStore((s) => s.swapExerciseInBlock)
   const appendBlockToCurrentSession = useSessionStore((s) => s.appendBlockToCurrentSession)
+  const moveBlock = useSessionStore((s) => s.moveBlock)
   // NOTE: store.cursor / store.skippedBlockIds / store.doneBlockIds are
   // intentionally NOT read here. The store is hydrated for the
   // most-recently-started active session across ALL workouts, so on a
@@ -159,6 +162,31 @@ export function OverviewScreen() {
   const [swapTargetBlockId, setSwapTargetBlockId] = useState<string | null>(null)
   // ExercisePicker open in "append" mode (+ Add Exercise CTA).
   const [addExerciseOpen, setAddExerciseOpen] = useState(false)
+  // Reorder mode (issue #21): when on, tiles show ▲/▼ for pending blocks and
+  // the tap-to-reveal action row is suppressed. Only meaningful with an
+  // active session (the toggle is hidden otherwise).
+  const [reorderMode, setReorderMode] = useState(false)
+
+  // Block ids that are FIXED for reorder (complement of "pending"). Shared
+  // single source of truth with the store action via fixedBlockIdsForReorder.
+  // A block is pending iff it's strictly ahead of the cursor, has no
+  // session_sets rows, and isn't skipped/done. MUST stay above the early
+  // return (hooks-order trap).
+  const blockIdsWithRows = useMemo(() => {
+    if (!snapshot) return new Set<string>()
+    const positions = new Set((logged ?? []).map((r) => r.block_position))
+    return new Set(snapshot.blocks.filter((b) => positions.has(b.position)).map((b) => b.id))
+  }, [snapshot, logged])
+  const fixedBlockIds = useMemo(() => {
+    if (!snapshot || !activeSession) return new Set<string>()
+    return fixedBlockIdsForReorder(
+      snapshot,
+      sessionCursor,
+      blockIdsWithRows,
+      sessionSkippedBlockIds,
+      sessionDoneBlockIds,
+    )
+  }, [snapshot, activeSession, sessionCursor, blockIdsWithRows, sessionSkippedBlockIds, sessionDoneBlockIds])
 
   // Soft-delete redirect: if this workout was deleted (locally or via sync),
   // bounce the user to Home rather than showing an empty Overview.
@@ -386,6 +414,21 @@ export function OverviewScreen() {
     }
   }
 
+  // Reorder a pending block up/down one slot. Session-only; the store action
+  // re-derives the authoritative fixed set from DB and no-ops if the move
+  // isn't legal. ensureStoreOnSession keeps the store's snapshot in step so
+  // BlockView/SetView reflect the new order if the user resumes.
+  const onMove = async (blockId: string, direction: 'up' | 'down') => {
+    if (!activeSession) return
+    await ensureStoreOnSession(activeSession.id)
+    await moveBlock(activeSession.id, blockId, direction)
+  }
+
+  const onToggleReorder = () => {
+    setTapFocusBlockId(null) // reorder mode and tap-to-reveal are mutually exclusive
+    setReorderMode((prev) => !prev)
+  }
+
   return (
     <div className={styles.root}>
       <SessionHeader
@@ -406,6 +449,19 @@ export function OverviewScreen() {
         {workout.starred ? <span className={styles.pill}>★</span> : null}
       </div>
 
+      {activeSession ? (
+        <div className={styles.reorderBar}>
+          <button
+            type="button"
+            className={`${styles.reorderToggle} ${reorderMode ? styles.reorderToggleActive : ''}`}
+            onClick={onToggleReorder}
+            aria-pressed={reorderMode}
+          >
+            {reorderMode ? 'Done' : 'Reorder'}
+          </button>
+        </div>
+      ) : null}
+
       <ol className={styles.blocks}>
         {snapshot.blocks.map((b, bi) => {
           const { status, done, total } = blockStatusOf(b)
@@ -414,6 +470,13 @@ export function OverviewScreen() {
           // 'done_*' implies at least one row; 'skipped_partial' / 'current'
           // with done > 0 also; gate on done === 0 to cover them all.
           const swapEligible = Boolean(activeSession) && b.kind === 'single' && done === 0
+          // Reorder affordances (only meaningful in reorder mode). A block is
+          // reorderable iff it's not in the fixed set; arrows enable only when
+          // there's a reorderable neighbour in that direction (no leaping
+          // fixed anchors, no running off the list edge).
+          const reorderable = reorderMode && !fixedBlockIds.has(b.id)
+          const canMoveUp = reorderable && nextReorderableIndex(snapshot, bi, 'up', fixedBlockIds) != null
+          const canMoveDown = reorderable && nextReorderableIndex(snapshot, bi, 'down', fixedBlockIds) != null
           return (
             <BlockRow
               key={b.id}
@@ -422,11 +485,18 @@ export function OverviewScreen() {
               exerciseMeta={exerciseMap}
               status={activeSession ? status : null}
               progress={activeSession ? { done, total } : null}
-              onTap={activeSession ? () => onTileToggleFocus(b.id) : null}
-              tapFocused={tapFocusBlockId === b.id}
-              actionLabel={actionLabel}
-              onAction={activeSession && actionLabel ? () => void onTileAction(b, status) : null}
-              onSwap={swapEligible ? () => void onTileSwap(b.id) : null}
+              // Tap-to-reveal is suppressed in reorder mode.
+              onTap={activeSession && !reorderMode ? () => onTileToggleFocus(b.id) : null}
+              tapFocused={!reorderMode && tapFocusBlockId === b.id}
+              actionLabel={reorderMode ? null : actionLabel}
+              onAction={!reorderMode && activeSession && actionLabel ? () => void onTileAction(b, status) : null}
+              onSwap={!reorderMode && swapEligible ? () => void onTileSwap(b.id) : null}
+              reorderMode={reorderMode}
+              reorderable={reorderable}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+              onMoveUp={canMoveUp ? () => void onMove(b.id, 'up') : null}
+              onMoveDown={canMoveDown ? () => void onMove(b.id, 'down') : null}
             />
           )
         })}
@@ -521,6 +591,12 @@ function BlockRow({
   actionLabel,
   onAction,
   onSwap,
+  reorderMode,
+  reorderable,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
 }: {
   block: SnapshotBlock
   startNumber: number
@@ -540,10 +616,26 @@ function BlockRow({
       has no session_sets rows. Renders as a secondary button below the
       primary action. */
   onSwap?: (() => void) | null
+  /** Reorder mode (issue #21) — when true, the tile shows ▲/▼ for pending
+      blocks and a locked/dimmed treatment for fixed anchors. */
+  reorderMode?: boolean
+  /** True when this block may move (it's pending). Fixed anchors are false. */
+  reorderable?: boolean
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: (() => void) | null
+  onMoveDown?: (() => void) | null
 }) {
   const grouped = block.kind === 'superset' || block.kind === 'circuit'
   const label = block.kind === 'superset' ? 'SUPERSET' : block.kind === 'circuit' ? 'CIRCUIT' : null
   const statusClass = status ? styles[`status_${status}`] : ''
+  // In reorder mode a fixed anchor is visually locked; a pending block is
+  // highlighted as movable.
+  const reorderClass = reorderMode
+    ? reorderable
+      ? styles.reorderMovable
+      : styles.reorderLocked
+    : ''
 
   const content = (
     <>
@@ -585,6 +677,44 @@ function BlockRow({
       </ul>
     </>
   )
+
+  // Reorder mode: tile body is inert (tap-to-reveal suppressed) and sits
+  // beside a ▲/▼ arrow column. Pending blocks get live arrows (disabled when
+  // no reorderable neighbour in that direction); fixed anchors get a lock
+  // glyph instead.
+  if (reorderMode) {
+    return (
+      <li className={`${styles.block} ${grouped ? styles.grouped : ''} ${statusClass} ${reorderClass}`}>
+        <div className={styles.reorderRow}>
+          <div className={styles.reorderBody}>{content}</div>
+          {reorderable ? (
+            <div className={styles.reorderArrows}>
+              <button
+                type="button"
+                className={styles.reorderArrow}
+                onClick={onMoveUp ?? undefined}
+                disabled={!canMoveUp}
+                aria-label="Move block up"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                className={styles.reorderArrow}
+                onClick={onMoveDown ?? undefined}
+                disabled={!canMoveDown}
+                aria-label="Move block down"
+              >
+                ▼
+              </button>
+            </div>
+          ) : (
+            <div className={styles.reorderLock} aria-hidden="true">🔒</div>
+          )}
+        </div>
+      </li>
+    )
+  }
 
   return (
     <li className={`${styles.block} ${grouped ? styles.grouped : ''} ${statusClass}`}>

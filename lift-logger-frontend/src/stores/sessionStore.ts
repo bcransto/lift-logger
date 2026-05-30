@@ -17,8 +17,11 @@ import {
   cursorsEqual,
   firstCursor,
   firstUnloggedCursorInBlock,
+  fixedBlockIdsForReorder,
   iterateSets,
+  nextReorderableIndex,
   setsForRound,
+  swapBlocksByIndex,
 } from '../features/session/sessionEngine'
 import { IDLE_TIMER, type TimerKind, type TimerSnapshot } from '../features/timer/TimerService'
 import type {
@@ -210,6 +213,20 @@ export type SessionState = {
    * safety check and no-ops if any session_sets row exists for the block.
    */
   swapExerciseInBlock: (blockId: string, newExerciseId: string) => Promise<void>
+  /**
+   * Move a PENDING block up or down one slot in the session snapshot
+   * (issue #21). Session-only — mutates `sessions.workout_snapshot` only,
+   * never the template tables. Swaps with the nearest *pending* neighbour in
+   * the given direction (skipping fixed anchors rather than leaping them); the
+   * helper keeps array-order and `position` aligned so the engine / cursor /
+   * existing session_sets rows stay consistent. No-op if `blockId` isn't
+   * reorderable or there's no reorderable neighbour in that direction.
+   */
+  moveBlock: (
+    sessionId: string,
+    blockId: string,
+    direction: 'up' | 'down',
+  ) => Promise<void>
   /** Advance the cursor one step (respecting skipped blocks). */
   advanceCursor: () => void
 }
@@ -1331,6 +1348,57 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       })
     }
     set({ snapshot: nextSnapshot })
+  },
+
+  async moveBlock(sessionId, blockId, direction) {
+    // Operate on the persisted session row's snapshot (not the store's
+    // in-memory copy) so this is correct even if the store happens to be
+    // hydrated on a different session. Session-only mutation — never touches
+    // the template tables and never bumps workouts.updated_at.
+    const ses = await db.sessions.get(sessionId)
+    if (!ses || ses.ended_at != null) return
+    let snapshot: WorkoutSnapshot
+    try {
+      snapshot = JSON.parse(ses.workout_snapshot) as WorkoutSnapshot
+    } catch {
+      return
+    }
+    const fromIndex = snapshot.blocks.findIndex((b) => b.id === blockId)
+    if (fromIndex < 0) return
+
+    // Re-derive the authoritative fixed set from DB so the swap can't move a
+    // block that's behind the cursor or already has logs, even if the UI's
+    // notion of "pending" drifted. A block is "with rows" if ANY session_sets
+    // row exists for it (logged or skipped — both pin it in place).
+    const rows = await db.session_sets.where('session_id').equals(sessionId).toArray()
+    const positionsWithRows = new Set(rows.map((r) => r.block_position))
+    const blockIdsWithRows = new Set(
+      snapshot.blocks.filter((b) => positionsWithRows.has(b.position)).map((b) => b.id),
+    )
+    const skippedBlockIds = parseSkippedBlocks(ses.skipped_block_ids)
+    const doneBlockIds = parseDoneBlocks(ses.done_block_ids)
+    const cursor = cursorFromLogged(snapshot, rows, skippedBlockIds)
+    const fixed = fixedBlockIdsForReorder(
+      snapshot,
+      cursor,
+      blockIdsWithRows,
+      skippedBlockIds,
+      doneBlockIds,
+    )
+    const targetIndex = nextReorderableIndex(snapshot, fromIndex, direction, fixed)
+    if (targetIndex == null) return
+
+    const nextSnapshot = swapBlocksByIndex(snapshot, fromIndex, targetIndex)
+    if (nextSnapshot === snapshot) return
+    const now = Date.now()
+    await db.sessions.put({
+      ...ses,
+      workout_snapshot: JSON.stringify(nextSnapshot),
+      updated_at: now,
+    })
+    // Reflect into the store only when it's currently tracking this session,
+    // so BlockView/SetView see the new order without a re-hydrate.
+    if (get().sessionId === sessionId) set({ snapshot: nextSnapshot })
   },
 }))
 
