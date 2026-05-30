@@ -269,3 +269,112 @@ export function isLastSetOfBlock(snapshot: WorkoutSnapshot, cursor: Cursor): boo
   const last = all[all.length - 1]
   return last ? cursorsEqual(last, cursor) : false
 }
+
+// ─── mid-session block reorder (issue #21) ────────────────────────────
+//
+// CORRECTNESS CRUX: the engine reads execution order from `snapshot.blocks[]`
+// ARRAY order, but cursors / session_sets / firstCursorOfBlock / targetAt key
+// off each block's `position` FIELD. To move a block we must keep both in sync:
+// swap the two blocks' array slots AND swap their `position` values. After the
+// swap, walking the array still yields blocks whose `position` ascends with
+// array index, so every consumer agrees.
+//
+// Only PENDING blocks move. A block is fixed if it has any session_sets row
+// (logged OR skipped), is skipped/done, OR is at/behind the cursor.
+// Adjacent-swap only: the arrows skip over fixed anchors rather than leaping
+// them, so a pending block can only trade places with its nearest *pending*
+// neighbour.
+
+/**
+ * Swap the block at `blockIndex` with the block at `targetIndex` in array
+ * order, then exchange their `position` fields so array-order and position
+ * stay aligned. Pure — returns a new snapshot; never mutates the input.
+ * Returns the snapshot unchanged if either index is out of range or equal.
+ */
+export function swapBlocksByIndex(
+  snapshot: WorkoutSnapshot,
+  blockIndex: number,
+  targetIndex: number,
+): WorkoutSnapshot {
+  const n = snapshot.blocks.length
+  if (
+    blockIndex === targetIndex ||
+    blockIndex < 0 ||
+    targetIndex < 0 ||
+    blockIndex >= n ||
+    targetIndex >= n
+  ) {
+    return snapshot
+  }
+  const blocks = snapshot.blocks.slice()
+  const a = blocks[blockIndex]!
+  const b = blocks[targetIndex]!
+  // Exchange array slots AND position fields so the moved blocks keep
+  // position === their new neighbours' order. Every other block's position is
+  // untouched, so the cursor's blockPosition and all existing session_sets
+  // rows stay valid (only pending blocks — ahead of cursor, no rows — move).
+  blocks[targetIndex] = { ...a, position: b.position }
+  blocks[blockIndex] = { ...b, position: a.position }
+  return { ...snapshot, blocks }
+}
+
+/**
+ * Compute the set of block ids that are FIXED for reorder purposes — i.e. the
+ * complement of "pending". A block is reorderable (pending) iff ALL hold:
+ *   - it has no session_sets rows at all (`blockIdsWithRows` excludes it),
+ *   - it is strictly AFTER the cursor's block in array order,
+ *   - it is not skipped and not done.
+ * Everything failing any of those is fixed. Blocks before/at the cursor are
+ * always fixed (the cursor's blockPosition and all logged rows must not move).
+ * When there is no cursor (workout fully accounted for) nothing is "ahead", so
+ * every block is fixed. Single source of truth shared by the store action and
+ * the OverviewScreen UI so their notions of "pending" can't drift.
+ */
+export function fixedBlockIdsForReorder(
+  snapshot: WorkoutSnapshot,
+  cursor: Cursor | null,
+  blockIdsWithRows: ReadonlySet<string>,
+  skippedBlockIds: ReadonlySet<string>,
+  doneBlockIds: ReadonlySet<string>,
+): Set<string> {
+  const fixed = new Set<string>()
+  const cursorIndex = cursor
+    ? snapshot.blocks.findIndex((b) => b.position === cursor.blockPosition)
+    : -1
+  snapshot.blocks.forEach((b, i) => {
+    const aheadOfCursor = cursor != null && cursorIndex >= 0 && i > cursorIndex
+    const pending =
+      aheadOfCursor &&
+      !blockIdsWithRows.has(b.id) &&
+      !skippedBlockIds.has(b.id) &&
+      !doneBlockIds.has(b.id)
+    if (!pending) fixed.add(b.id)
+  })
+  return fixed
+}
+
+/**
+ * Find the array index of the nearest reorderable neighbour to `fromIndex` in
+ * the given direction, skipping over fixed anchors. `fixedBlockIds` is the set
+ * of block ids that may NOT move (logged blocks, the cursor's block, skipped /
+ * done blocks). Returns null if `fromIndex` is itself fixed, out of range, or
+ * there is no reorderable block on that side. This is the single source of
+ * truth for both the store's swap and the UI's arrow-enable state.
+ */
+export function nextReorderableIndex(
+  snapshot: WorkoutSnapshot,
+  fromIndex: number,
+  direction: 'up' | 'down',
+  fixedBlockIds: ReadonlySet<string>,
+): number | null {
+  const blocks = snapshot.blocks
+  if (fromIndex < 0 || fromIndex >= blocks.length) return null
+  const from = blocks[fromIndex]!
+  if (fixedBlockIds.has(from.id)) return null
+  const step = direction === 'up' ? -1 : 1
+  for (let i = fromIndex + step; i >= 0 && i < blocks.length; i += step) {
+    if (fixedBlockIds.has(blocks[i]!.id)) return null // hit a fixed anchor — don't leap it
+    return i // first non-fixed neighbour
+  }
+  return null // edge of list
+}
