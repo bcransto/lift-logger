@@ -235,10 +235,10 @@ End Workout ends the session (`endWorkout` with explicit `sessionId` + orphan cl
 [SessionHeader.tsx](lift-logger-frontend/src/shared/components/SessionHeader.tsx) is the consistent top-nav row across BlockView, BlockIntroScreen, SetView, and OverviewScreen. Layout: `[← BackLabel] [center eyebrow] [right slot]`. Right slot priority:
 
 1. **Resume Block anchor** (`→ Block`) — when an active session exists AND the current route is *not* a session route. Lets the user "zip back" to the active block from anywhere they've drifted (Home, browsing another workout's overview).
-2. Caller-provided `rightSlot` — e.g., BlockView passes `Sets →` (forward affordance to SetView).
+2. Caller-provided `rightSlot` — none currently (BlockView's `Sets →` button was removed in issue #27; SetView is now reachable only via tap-focus → Edit).
 3. Hidden.
 
-The Resume anchor reads cursor from sessionStore + active session row from Dexie; tapping navigates to `/session/:id/active/:bp/:setKey`. `suppressResumeAnchor` overrides only when redundant (none currently — even on the active workout's own overview, the anchor coexists with the bottom Resume CTA).
+The Resume anchor reads cursor from sessionStore + active session row from Dexie; tapping navigates to `/session/:id/active/:bp/:setKey`. `suppressResumeAnchor` overrides when the anchor would be redundant — OverviewScreen passes it (issue #31) since the bottom Resume CTA already covers that affordance there.
 
 ### BlockView tap-to-reveal Edit / Start on set cards (#5a)
 
@@ -258,15 +258,15 @@ Button label per card situation (when tap-focused):
 
 **Cursor advance is loggedSetKeys-aware** in this branch. After `logSet`, `advance()` skips past sets whose key is in `loggedActualKeys` (computed from `db.session_sets` filtering `r.skipped !== 1`). Skipped sets are valid landing spots — the user can revisit them. This matters specifically when returning to a previously-skipped set and logging it: cursor lands on the next thing the user still owes, not the very next iteration step which might be a set they already finished.
 
-### SetView (set editor): staged edits + up/down nav
+### SetView (set editor): staged edits
 
-[SetView.tsx](lift-logger-frontend/src/features/session/SetView.tsx) is the per-set editor. Reachable two ways: BlockView header `Sets →` button (opens at execution cursor) or BlockView tap-focus → Edit button (opens pinned to the tapped set via `initialViewingCursor` prop, which suppresses the auto-reset effect that would normally re-sync to the execution cursor).
+[SetView.tsx](lift-logger-frontend/src/features/session/SetView.tsx) is the per-set editor. Reachable one way: BlockView tap-focus → Edit button (opens pinned to the tapped set via `initialViewingCursor` prop, which suppresses the auto-reset effect that would normally re-sync to the execution cursor). Issue #27 removed the old set-browser affordances — the BlockView header `Sets →` button and the up/down nav arrows in both SetView and SetLogger. Don't reintroduce them: editing is always pinned to one explicitly tapped set.
 
 **Steppers no longer auto-commit.** Edits land in local state (`weight`/`reps`/`duration`); a `seed` snapshot tracks the last-committed values. The Update button is enabled only when there's a real diff. Update commits + reseeds + closes SetView. Cancel resets local state back to seed.
 
 **Commit branching is critical**: `if (isFocused && !isDone)` writes to `session.pending_actuals` (the stash logSet picks up on Next). Otherwise (`doneRow` exists), direct upsert to the `session_sets` row. The `&& !isDone` gate is what makes Edit-on-cursor-focused-logged-set work — without it, the focused-and-done case would write to pendingActuals instead of the row, the seed effect would re-run with the unchanged doneRow, and the input would visibly reset back to the prior value. (Bug fix in commit `b32045e`.)
 
-[SetLogger.tsx](lift-logger-frontend/src/features/session/SetLogger.tsx) (the modal opened on Done/Record on the focused card) also has up/down navigation that calls `jumpTo(prev/next cursor in block)`. Pending edits on the current set are discarded on navigate — user should tap Done first if they want to save.
+[SetLogger.tsx](lift-logger-frontend/src/features/session/SetLogger.tsx) (the modal opened on Done/Record on the focused card) logs only the currently active set — no set navigation (issue #27).
 
 ### `WorkSetCard` prominence flip
 
@@ -364,7 +364,6 @@ The old SQLite database `data/liftlogger.db` is preserved on disk as a safety ne
 - **`BlockIntroScreen` superset/circuit grid wraps to 2 columns when `sortedExercises.length > 2`.** Don't switch the inline `gridTemplateColumns` back to `repeat(${sortedExercises.length}, 1fr)` — at iPhone width (375px) anything past 2 cards per row gets smooshed (this bit us with The Gauntlet's 4-exercise finisher; commit `9d89a6d`).
 - **Local backend vs Pi.** The local backend (`lift-logger-api/data/iron.db`) and the Pi's production DB are entirely separate. An MCP write from Claude.ai's Cloudflare connector goes to prod by default. When copying rows between the two, bump `updated_at` to `Date.now()` — clients won't pull a row whose `updated_at` is older than their `lastSync`.
 - **`tsc --noEmit` ≠ `tsc -b`.** Local typecheck (`npm run typecheck`) sometimes accepts type narrowings that the Pi's incremental project build rejects (seen with optional `block.rest_after_sec` in commit `5c514cc`). Before deploying, run `npx tsc -b --force` to mirror the Pi's strictness.
-- **Forward affordance label**: the right-corner header button is `Sets →` on BlockView (descend to SetView). Don't replace the arrow with a kebab `⋮` — that reads as a dropdown menu, which it isn't.
 - **`TAILSCALE_DEV=1` is read by `vite.config.ts` at server startup** — flipping the env var requires restarting the dev server (HMR can't hot-reload its own config). The flag adds `hmr.clientPort: 443 / protocol: 'wss'`; without it the iPhone's HMR websocket dials port 5173 (not exposed via Tailscale Serve) and the page never finishes wiring up.
 - **Tailscale SSH may prompt for re-auth** before deploys. If `ssh bcransto@pinto` returns "Tailscale SSH requires an additional check" with a login URL, open it in a browser and wait for confirmation before retrying.
 - **`git push` over HTTPS may hang silently** when the macOS keychain credential helper returns `-128` (cancelled / unable to prompt). Symptom: `git push origin main` runs forever with no output, no error. Cause: git tries to prompt for username/password via TTY, which the Bash tool doesn't have. Diagnosis: `GIT_TERMINAL_PROMPT=0 git push origin main` will fail fast with `could not read Username for 'https://github.com'`. Fix: push interactively from a terminal once to refresh keychain creds, then subsequent automated pushes work.

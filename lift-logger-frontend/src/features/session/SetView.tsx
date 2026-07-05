@@ -1,7 +1,5 @@
-// Set view overlay — opened via the right-header button in Block view or by
-// tapping the currently focused set card. Paginate between sets within the
-// current block via the up/down arrows (round-major). Closed via the header
-// Back button.
+// Set view overlay — opened via tap-focus → Edit on a set card in Block view,
+// pinned to the tapped set. Closed via the header Back button.
 //
 // Three edit modes, derived from where the viewing cursor lands:
 //   - Focused set   → edits stash to sessions.pending_actuals; logSet applies
@@ -17,12 +15,7 @@ import { Button } from '../../shared/components/Button'
 import { NumberStepper } from '../../shared/components/NumberStepper'
 import { SessionHeader } from '../../shared/components/SessionHeader'
 import { TimerDock } from './TimerDock'
-import {
-  cursorsEqual,
-  iterateBlockCursors,
-  nextCursorInBlock,
-  prevCursorInBlock,
-} from './sessionEngine'
+import { cursorsEqual, iterateBlockCursors } from './sessionEngine'
 import type {
   Cursor,
   PendingActuals,
@@ -61,8 +54,7 @@ export function SetViewOverlay({
   }, [session])
 
   // Viewing cursor is local — starts at `initialViewingCursor` if the caller
-  // pinned one (Edit-on-tap-focus), otherwise the execution cursor. Moves via
-  // the up/down arrows.
+  // pinned one (Edit-on-tap-focus), otherwise the execution cursor.
   const [viewingCursor, setViewingCursor] = useState<Cursor | null>(
     initialViewingCursor ?? executionCursor,
   )
@@ -219,7 +211,7 @@ export function SetViewOverlay({
     }
   }
 
-  // Navigation
+  // Position within the block for the header readout.
   const totalInBlock = snapshot && viewingCursor
     ? iterateBlockCursors(snapshot, viewingCursor.blockPosition).length
     : 0
@@ -227,18 +219,6 @@ export function SetViewOverlay({
     ? iterateBlockCursors(snapshot, viewingCursor.blockPosition)
         .findIndex((c) => cursorsEqual(c, viewingCursor)) + 1
     : 0
-  const canUp = snapshot && viewingCursor ? prevCursorInBlock(snapshot, viewingCursor) !== null : false
-  const canDown = snapshot && viewingCursor ? nextCursorInBlock(snapshot, viewingCursor) !== null : false
-  const onUp = () => {
-    if (!snapshot || !viewingCursor) return
-    const p = prevCursorInBlock(snapshot, viewingCursor)
-    if (p) setViewingCursor(p)
-  }
-  const onDown = () => {
-    if (!snapshot || !viewingCursor) return
-    const n = nextCursorInBlock(snapshot, viewingCursor)
-    if (n) setViewingCursor(n)
-  }
 
   // Block context for block-kind tag (shows R/total for superset/circuit).
   const block = useMemo(() => {
@@ -289,30 +269,12 @@ export function SetViewOverlay({
       <h1 className={styles.display}>{target.be.name}</h1>
 
       <div className={styles.navRow}>
-        <button
-          type="button"
-          className={styles.navArrow}
-          onClick={onUp}
-          disabled={!canUp}
-          aria-label="Previous set"
-        >
-          ▲
-        </button>
         <div className={styles.setLabel}>
           SET {viewingCursor.setNumber}
           {roundPill ? ` · ${roundPill}` : ''}
           {status ? ` · ${status}` : ''}
           {target.t.is_peak ? ' ★' : ''}
         </div>
-        <button
-          type="button"
-          className={styles.navArrow}
-          onClick={onDown}
-          disabled={!canDown}
-          aria-label="Next set"
-        >
-          ▼
-        </button>
       </div>
 
       {isTimed ? (

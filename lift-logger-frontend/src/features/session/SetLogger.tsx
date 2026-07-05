@@ -1,7 +1,6 @@
 // SetLogger — opens on tap of the focused set card in a single-block BlockView.
-// Dedicated to logging the *currently active* set. Editing past sets still
-// happens in SetView (via the top-right "Set" button in BlockView), which has
-// its up/down nav arrows.
+// Dedicated to logging the *currently active* set. Editing other sets happens
+// in SetView, reached via tap-focus → Edit on a set card in BlockView.
 //
 // Behavior:
 //   - Cancel → stops the active timer (which the BlockView tap started),
@@ -20,7 +19,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/db'
 import { useSessionStore } from '../../stores/sessionStore'
 import { Button } from '../../shared/components/Button'
-import { nextCursorInBlock, prevCursorInBlock, targetAt } from './sessionEngine'
+import { targetAt } from './sessionEngine'
 import type { WorkoutSnapshot } from '../../types/schema'
 import styles from './SetLogger.module.css'
 
@@ -43,7 +42,6 @@ type Props = {
 export function SetLogger({ onRecord, onCancel, primaryLabel = 'Done' }: Props) {
   const sessionId = useSessionStore((s) => s.sessionId)
   const cursor = useSessionStore((s) => s.cursor)
-  const jumpTo = useSessionStore((s) => s.jumpTo)
 
   const session = useLiveQuery(
     () => (sessionId ? db.sessions.get(sessionId) : undefined),
@@ -87,44 +85,17 @@ export function SetLogger({ onRecord, onCancel, primaryLabel = 'Done' }: Props) 
     })
   }
 
-  // Up/down navigation within the block. jumpTo moves the execution cursor;
-  // SetLogger re-seeds form state from the new cursor's target via the
-  // useEffect at line 63. Pending edits on the current set are discarded —
-  // the user should tap Done first if they want to save them.
-  const prevCursor = snapshot && cursor ? prevCursorInBlock(snapshot, cursor) : null
-  const nextCursor = snapshot && cursor ? nextCursorInBlock(snapshot, cursor) : null
-  const onUp = () => { if (prevCursor) jumpTo(prevCursor) }
-  const onDown = () => { if (nextCursor) jumpTo(nextCursor) }
-
   return (
     <div className={styles.overlay}>
       <header className={styles.header}>
         <div className={styles.eyebrow}>LOG SET</div>
         <h1 className={styles.display}>{entry.blockExercise.name}</h1>
         <div className={styles.navRow}>
-          <button
-            type="button"
-            className={styles.navArrow}
-            onClick={onUp}
-            disabled={!prevCursor}
-            aria-label="Previous set"
-          >
-            ▲
-          </button>
           <div className={styles.setLabel}>
             SET {cursor.setNumber}
             {roundPill ? ` · ${roundPill}` : ''}
             {entry.target.is_peak ? ' ★' : ''}
           </div>
-          <button
-            type="button"
-            className={styles.navArrow}
-            onClick={onDown}
-            disabled={!nextCursor}
-            aria-label="Next set"
-          >
-            ▼
-          </button>
         </div>
       </header>
 

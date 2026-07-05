@@ -375,16 +375,6 @@ export function BlockView() {
         <SessionHeader
           backLabel="Workout"
           onBack={() => session?.workout_id && navigate(`/workout/${session.workout_id}`)}
-          rightSlot={
-            <button
-              type="button"
-              className={styles.navBtn}
-              onClick={() => openOverlay('set')}
-              aria-label="Sets view"
-            >
-              Sets →
-            </button>
-          }
         >
           LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
         </SessionHeader>
@@ -629,16 +619,6 @@ export function BlockView() {
       <SessionHeader
         backLabel="Workout"
         onBack={() => session?.workout_id && navigate(`/workout/${session.workout_id}`)}
-        rightSlot={
-          <button
-            type="button"
-            className={styles.navBtn}
-            onClick={() => openOverlay('set')}
-            aria-label="Sets view"
-          >
-            Sets →
-          </button>
-        }
       >
         LIFT {liftNumber.current} / {liftNumber.total} · {elapsedSinceStart}
       </SessionHeader>
