@@ -434,6 +434,7 @@ export function OverviewScreen() {
       <SessionHeader
         backLabel="Home"
         onBack={() => navigate('/')}
+        suppressResumeAnchor
       >
         OVERVIEW · {totalLifts} {totalLifts === 1 ? 'LIFT' : 'LIFTS'}
       </SessionHeader>
