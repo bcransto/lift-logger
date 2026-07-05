@@ -143,14 +143,21 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
     // Navigate first so BlockView (our host) unmounts before the store
     // reset can fire its cursor-null routing effect. Stop the active timer
     // so a stale countdown can't resurrect if the session is reopened.
+    //
+    // onClose() must come LAST: while the BCO is open the cursor already
+    // points into the next block (Record-on-last-set advances it) and
+    // BlockView's cursor→URL effect is suppressed only by
+    // overlay === 'blockComplete'. Closing before the summary navigation
+    // commits lifts the suppression and that effect routes to
+    // /intro/{next} — overriding our navigate. (Bug caught in verify.)
     if (!sessionId) return
-    onClose()
     navigate(`/session/${sessionId}/summary`)
     await stopActiveTimer()
     await endWorkout(null, {
       sessionId,
       alsoEndOrphansForWorkoutId: session?.workout_id ?? undefined,
     })
+    onClose()
   }
 
   // ─── render ─────────────────────────────────────────────────────────

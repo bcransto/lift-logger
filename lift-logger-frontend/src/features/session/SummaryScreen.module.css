@@ -123,10 +123,43 @@
 }
 
 .logName {
-  grid-column: 1 / -1;
   font-family: var(--font-body);
   font-weight: 700;
   font-size: 14px;
+  align-self: center;
+}
+
+/* Status pill — mirrors OverviewScreen's tile pill palette so the
+   done/skipped color language carries across screens. */
+.statusPill {
+  justify-self: end;
+  align-self: center;
+  padding: 1px var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.status_done {
+  border-color: rgba(139, 195, 74, 0.6);
+  color: rgba(139, 195, 74, 1);
+}
+
+.status_partial {
+  border-style: dashed;
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  background: rgba(255, 194, 31, 0.08);
+}
+
+.status_skipped {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  background: rgba(255, 194, 31, 0.08);
 }
 
 .logSets {

@@ -207,7 +207,10 @@ export function BlockView() {
   // bonus block, or tap End Workout to actually finish. /summary is only
   // a defensive fallback when the session has no associated workout_id.
   useEffect(() => {
-    if (sessionId && snapshot && !cursor) {
+    // Guard on ended_at: after End Workout the store reset also nulls the
+    // cursor, and if this component is still mounted (router transition
+    // pending) this effect would hijack the summary navigation.
+    if (sessionId && snapshot && !cursor && session?.ended_at == null) {
       if (session?.workout_id) {
         navigate(`/workout/${session.workout_id}`, { replace: true })
       } else {
@@ -713,12 +716,17 @@ export function BlockView() {
             )
           }
           // c.kind === 'finishBlock'
+          // On the last block overall the terminal card reads "✓ Finish
+          // Workout" and must END the session → /summary (issue #30), same
+          // as every other end-workout affordance. Mid-workout it's "✓ Mark
+          // as Done" and just advances (next block's intro takes over).
           const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Mark as Done'
+          const onFinishTap = c.isLastBlockOverall ? () => void onEnd() : onInlineNextLegacy
           return (
             <div key={`f${i}`} className={styles.finishBlockWrap}>
               <button
                 className={`${styles.finishBlock} ${c.active && !c.isTimed ? styles.finishBlockActive : ''}`}
-                onClick={c.active && !c.isTimed ? onInlineNextLegacy : undefined}
+                onClick={c.active && !c.isTimed ? onFinishTap : undefined}
                 disabled={!c.active || c.isTimed}
                 aria-label={label}
               >
