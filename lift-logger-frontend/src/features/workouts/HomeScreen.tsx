@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/db'
+import { createEmptyWorkout } from '../../db/mutations'
 import type { WorkoutRow } from '../../types/schema'
 import { WorkoutCard } from './WorkoutCard'
+import { Button } from '../../shared/components/Button'
 import { SyncIndicator } from '../../shared/components/SyncIndicator'
 import { useAutoSync } from '../../sync/useSyncStatus'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -13,10 +16,14 @@ type Sort = 'last_performed' | 'starred' | 'az' | 'duration'
 
 export function HomeScreen() {
   useAutoSync()
+  const navigate = useNavigate()
   const [now, setNow] = useState(Date.now())
   const [query, setQuery] = useState('')
   const [chip, setChip] = useState<string>('All')
   const [sort, setSort] = useState<Sort>('last_performed')
+  // Create-workout name modal (issue #32).
+  const [createOpen, setCreateOpen] = useState(false)
+  const [newName, setNewName] = useState('')
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -99,6 +106,16 @@ export function HomeScreen() {
     return filtered
   }, [workouts, query, chip, sort])
 
+  // Create the empty workout and land on its Overview, where the always-
+  // present + Add Block button (template mode) builds it out block by block.
+  const onCreateWorkout = async () => {
+    const name = newName.trim()
+    if (!name) return
+    const id = await createEmptyWorkout(name)
+    setCreateOpen(false)
+    navigate(`/workout/${id}`)
+  }
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -117,16 +134,28 @@ export function HomeScreen() {
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      <div className={styles.chips}>
-        {chips.map((c) => (
-          <button
-            key={c}
-            className={`${styles.chip} ${c === chip ? styles.chipActive : ''}`}
-            onClick={() => setChip(c)}
-          >
-            {c}
-          </button>
-        ))}
+      <div className={styles.chipsRow}>
+        <div className={styles.chips}>
+          {chips.map((c) => (
+            <button
+              key={c}
+              className={`${styles.chip} ${c === chip ? styles.chipActive : ''}`}
+              onClick={() => setChip(c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className={styles.createBtn}
+          onClick={() => {
+            setNewName('')
+            setCreateOpen(true)
+          }}
+        >
+          + Create
+        </button>
       </div>
 
       <div className={styles.sortRow}>
@@ -156,6 +185,33 @@ export function HomeScreen() {
           ))}
         </ul>
       )}
+
+      {createOpen ? (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalCard}>
+            <div className={styles.eyebrow}>NEW WORKOUT</div>
+            <input
+              className={styles.search}
+              type="text"
+              placeholder="Workout name"
+              value={newName}
+              autoFocus
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newName.trim()) void onCreateWorkout()
+              }}
+            />
+            <div className={styles.modalActions}>
+              <Button variant="secondary" block onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" block disabled={!newName.trim()} onClick={() => void onCreateWorkout()}>
+                Create →
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

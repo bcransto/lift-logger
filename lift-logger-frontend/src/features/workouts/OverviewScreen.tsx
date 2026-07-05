@@ -24,6 +24,7 @@ import { parseJsonArray, relativeDate } from '../../shared/utils/format'
 import { AddBlockOverlay } from '../session/AddBlockOverlay'
 import { ExercisePicker } from '../session/ExercisePicker'
 import type { NewBlockSpec } from '../session/blockSpec'
+import { appendBlockToWorkout } from '../../db/mutations'
 import type { Cursor, SessionSetRow, SnapshotBlock, WorkoutSnapshot } from '../../types/schema'
 import styles from './OverviewScreen.module.css'
 
@@ -314,14 +315,21 @@ export function OverviewScreen() {
     setSwapTargetBlockId(null)
   }
 
+  // Mode-switched committer (issue #32): with an active session the block
+  // lands in the session snapshot only (#4); pre-session it writes real
+  // template rows and the tiles update via the live snapshot query.
   const onAddBlock = async (spec: NewBlockSpec) => {
-    if (!activeSession) return
-    await ensureStoreOnSession(activeSession.id)
-    const target = await appendBlockToCurrentSession(spec)
-    setAddBlockOpen(false)
-    if (target) {
-      navigate(`/session/${activeSession.id}/intro/${target.blockPosition}`)
+    if (activeSession) {
+      await ensureStoreOnSession(activeSession.id)
+      const target = await appendBlockToCurrentSession(spec)
+      setAddBlockOpen(false)
+      if (target) {
+        navigate(`/session/${activeSession.id}/intro/${target.blockPosition}`)
+      }
+      return
     }
+    await appendBlockToWorkout(workout.id, spec)
+    setAddBlockOpen(false)
   }
 
   const onDeleteWorkout = async () => {
@@ -491,16 +499,19 @@ export function OverviewScreen() {
         })}
       </ol>
 
-      {/* Session tools live at the bottom with the CTA stack (issue #26). */}
-      {activeSession ? (
-        <div className={styles.sessionToolsRow}>
-          <button
-            type="button"
-            className={styles.addExerciseBtn}
-            onClick={() => setAddBlockOpen(true)}
-          >
-            + Add Block
-          </button>
+      {/* Tools live at the bottom with the CTA stack (issue #26). + Add
+         Block is always present (issue #32) — commit target switches on
+         session state. Reorder stays session-only (template reorder can't
+         sync; it belongs to MCP). */}
+      <div className={styles.sessionToolsRow}>
+        <button
+          type="button"
+          className={styles.addExerciseBtn}
+          onClick={() => setAddBlockOpen(true)}
+        >
+          + Add Block
+        </button>
+        {activeSession ? (
           <button
             type="button"
             className={`${styles.reorderToggle} ${reorderMode ? styles.reorderToggleActive : ''}`}
@@ -509,14 +520,19 @@ export function OverviewScreen() {
           >
             {reorderMode ? 'Done' : 'Reorder'}
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       <div className={styles.startRow}>
         {!activeSession ? (
-          <Button variant="primary" block onClick={onStart}>
-            Start Workout →
-          </Button>
+          snapshot.blocks.length > 0 ? (
+            <Button variant="primary" block onClick={onStart}>
+              Start Workout →
+            </Button>
+          ) : (
+            // Freshly created workout (issue #32): nothing to start yet.
+            <div className={styles.emptyHint}>No blocks yet — tap “+ Add Block” to build this workout.</div>
+          )
         ) : cursor ? (
           <>
             {/* Cursor non-null: Resume is the primary action; End Workout is
@@ -560,9 +576,9 @@ export function OverviewScreen() {
         )
       })() : null}
 
-      {addBlockOpen && activeSession ? (
+      {addBlockOpen ? (
         <AddBlockOverlay
-          currentSessionId={activeSession.id}
+          currentSessionId={activeSession?.id ?? null}
           onAdd={onAddBlock}
           onCancel={() => setAddBlockOpen(false)}
         />

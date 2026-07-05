@@ -405,3 +405,15 @@ div.blockTap {
 .reorderLocked {
   opacity: 0.5;
 }
+
+/* Empty-workout hint (issue #32): shown in place of the Start CTA until
+   the first block is added. */
+.emptyHint {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  width: 100%;
+}
