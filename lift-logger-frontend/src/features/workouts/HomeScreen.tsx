@@ -149,12 +149,13 @@ export function HomeScreen() {
         <button
           type="button"
           className={styles.createBtn}
+          aria-label="Create workout"
           onClick={() => {
             setNewName('')
             setCreateOpen(true)
           }}
         >
-          + Create
+          +
         </button>
       </div>
 
