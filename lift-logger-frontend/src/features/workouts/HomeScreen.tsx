@@ -48,14 +48,6 @@ export function HomeScreen() {
     return byWorkout
   }, [])
 
-  // Workout IDs that have at least one *completed* session. Abandoned and
-  // active-with-zero-sets sessions don't count — "New" means "never actually
-  // performed", not "never touched".
-  const sessionedWorkoutIds = useLiveQuery(async () => {
-    const rows = await db.sessions.where('status').equals('completed').toArray()
-    return new Set(rows.map((s) => s.workout_id).filter((id) => id !== null) as string[])
-  }, [])
-
   // Workout IDs that have an active session with at least one logged set.
   // Filtering on setCount > 0 sidesteps the brief window where a freshly
   // started session exists but the cleanup sweep hasn't yet marked it
@@ -91,7 +83,12 @@ export function HomeScreen() {
     }
     const byChip = (w: WorkoutRow) => {
       if (chip === 'All') return true
-      if (chip === 'New') return !(sessionedWorkoutIds?.has(w.id) ?? false)
+      // "New" tracks the same "never actually performed" signal as the
+      // WorkoutCard badge (last_performed, bumped on each real logged set) —
+      // using session status:'completed' instead let in-progress-but-logged
+      // workouts linger under the New chip while their card already showed a
+      // real date (issue #25).
+      if (chip === 'New') return w.last_performed == null
       if (chip === '★ Starred') return w.starred === 1
       const tags = parseJsonArray(w.tags) as string[]
       return tags.some((t) => t.toLowerCase() === chip.toLowerCase())
@@ -100,7 +97,7 @@ export function HomeScreen() {
     // "New" overrides the sort dropdown — user expects newest-first.
     filtered.sort(chip === 'New' ? (a, b) => b.created_at - a.created_at : byCmp(sort))
     return filtered
-  }, [workouts, sessionedWorkoutIds, query, chip, sort])
+  }, [workouts, query, chip, sort])
 
   return (
     <div className={styles.root}>
