@@ -580,18 +580,21 @@ describe('sessionEngine — swapBlocksByIndex (array order + position stay align
   })
 })
 
-describe('sessionEngine — fixedBlockIdsForReorder ("pending" = ahead of cursor, no rows, not skipped/done)', () => {
+describe('sessionEngine — fixedBlockIdsForReorder ("pending" = at/ahead of cursor, no rows, not skipped/done)', () => {
   const s = fourSingleBlocks() // blk1..blk4 at index/position 1..4
   const empty = new Set<string>()
 
-  it('cursor on block 1: blocks ahead with no rows are pending; cursor block + before are fixed', () => {
+  it('cursor on block 1, nothing logged: ALL blocks are pending (issue #26 — the untouched cursor block moves too)', () => {
     const cursor = { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }
     const fixed = fixedBlockIdsForReorder(s, cursor, empty, empty, empty)
-    // blk1 is the cursor block → fixed. blk2/3/4 are ahead & untouched → pending.
+    expect(fixed.size).toBe(0)
+  })
+
+  it('cursor block with rows is fixed (mid-block: some sets already logged)', () => {
+    const cursor = { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }
+    const fixed = fixedBlockIdsForReorder(s, cursor, new Set(['blk1']), empty, empty)
     expect(fixed.has('blk1')).toBe(true)
     expect(fixed.has('blk2')).toBe(false)
-    expect(fixed.has('blk3')).toBe(false)
-    expect(fixed.has('blk4')).toBe(false)
   })
 
   it('a block with logged rows is fixed even though it is ahead of the cursor', () => {
@@ -611,13 +614,13 @@ describe('sessionEngine — fixedBlockIdsForReorder ("pending" = ahead of cursor
     expect(fixed.has('blk3')).toBe(false) // still pending
   })
 
-  it('blocks before the cursor are fixed (cursor on block 3)', () => {
+  it('blocks strictly before the cursor are fixed (cursor on block 3)', () => {
     const cursor = { blockPosition: 3, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }
     const fixed = fixedBlockIdsForReorder(s, cursor, empty, empty, empty)
     expect(fixed.has('blk1')).toBe(true)
     expect(fixed.has('blk2')).toBe(true)
-    expect(fixed.has('blk3')).toBe(true) // cursor block
-    expect(fixed.has('blk4')).toBe(false) // only one ahead → pending
+    expect(fixed.has('blk3')).toBe(false) // cursor block, untouched → pending (issue #26)
+    expect(fixed.has('blk4')).toBe(false) // ahead → pending
   })
 
   it('no cursor (workout fully accounted) → every block fixed', () => {
@@ -630,19 +633,33 @@ describe('sessionEngine — nextReorderableIndex (adjacent swap, no leaping anch
   const s = fourSingleBlocks()
 
   it('finds the immediate pending neighbour up/down', () => {
-    // cursor on block 1 → blk2/3/4 pending, blk1 fixed.
+    // cursor on block 1 with rows in blk1 → blk2/3/4 pending, blk1 fixed.
+    const fixed = fixedBlockIdsForReorder(
+      s,
+      { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 },
+      new Set(['blk1']), new Set(), new Set(),
+    )
+    // blk3 (index 2): up → index 1 (blk2), down → index 3 (blk4).
+    expect(nextReorderableIndex(s, 2, 'up', fixed)).toBe(1)
+    expect(nextReorderableIndex(s, 2, 'down', fixed)).toBe(3)
+    // blk2 (index 1): up → index 0 is blk1 which is FIXED (has rows) → null.
+    expect(nextReorderableIndex(s, 1, 'up', fixed)).toBeNull()
+    // blk4 (index 3): down → edge of list → null.
+    expect(nextReorderableIndex(s, 3, 'down', fixed)).toBeNull()
+  })
+
+  it('untouched cursor block can trade with the block below it (issue #26)', () => {
+    // cursor on block 1, nothing logged → every block pending.
     const fixed = fixedBlockIdsForReorder(
       s,
       { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 },
       new Set(), new Set(), new Set(),
     )
-    // blk3 (index 2): up → index 1 (blk2), down → index 3 (blk4).
-    expect(nextReorderableIndex(s, 2, 'up', fixed)).toBe(1)
-    expect(nextReorderableIndex(s, 2, 'down', fixed)).toBe(3)
-    // blk2 (index 1): up → index 0 is blk1 which is FIXED (cursor block) → null.
-    expect(nextReorderableIndex(s, 1, 'up', fixed)).toBeNull()
-    // blk4 (index 3): down → edge of list → null.
-    expect(nextReorderableIndex(s, 3, 'down', fixed)).toBeNull()
+    // blk1 (index 0): down → index 1 (blk2); up → edge → null.
+    expect(nextReorderableIndex(s, 0, 'down', fixed)).toBe(1)
+    expect(nextReorderableIndex(s, 0, 'up', fixed)).toBeNull()
+    // blk2 (index 1): up → index 0 (blk1) is now movable.
+    expect(nextReorderableIndex(s, 1, 'up', fixed)).toBe(0)
   })
 
   it('does NOT leap a fixed anchor (returns null rather than skipping past it)', () => {
@@ -664,14 +681,14 @@ describe('sessionEngine — nextReorderableIndex (adjacent swap, no leaping anch
       { blockPosition: 2, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 },
       new Set(), new Set(), new Set(),
     )
-    // blk1 (index 0) is fixed (before cursor) → cannot move at all.
+    // blk1 (index 0) is fixed (strictly before cursor) → cannot move at all.
     expect(nextReorderableIndex(s, 0, 'up', fixed)).toBeNull()
     expect(nextReorderableIndex(s, 0, 'down', fixed)).toBeNull()
   })
 
-  it('end-to-end: swap two pending blocks, cursor block stays put', () => {
+  it('end-to-end: swap two pending blocks, cursor block (with rows) stays put', () => {
     const cursor = { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }
-    const fixed = fixedBlockIdsForReorder(s, cursor, new Set(), new Set(), new Set())
+    const fixed = fixedBlockIdsForReorder(s, cursor, new Set(['blk1']), new Set(), new Set())
     // Move blk2 (index 1) down → swaps with blk3 (index 2).
     const targetIndex = nextReorderableIndex(s, 1, 'down', fixed)
     expect(targetIndex).toBe(2)
@@ -683,5 +700,21 @@ describe('sessionEngine — nextReorderableIndex (adjacent swap, no leaping anch
     // The cursor coordinate (blockPosition 1) still resolves to blk1.
     const t = targetAt(next, cursor)
     expect(t?.blockExercise.exercise_id).toBe('ex1')
+  })
+
+  it('end-to-end: move the untouched cursor block down; first cursor re-derives to the new first block (issue #26)', () => {
+    const cursor = { blockPosition: 1, blockExercisePosition: 1, roundNumber: 1, setNumber: 1 }
+    const fixed = fixedBlockIdsForReorder(s, cursor, new Set(), new Set(), new Set())
+    // Move blk1 (index 0) down → swaps with blk2 (index 1).
+    const targetIndex = nextReorderableIndex(s, 0, 'down', fixed)
+    expect(targetIndex).toBe(1)
+    const next = swapBlocksByIndex(s, 0, targetIndex!)
+    expect(next.blocks.map((b) => b.id)).toEqual(['blk2', 'blk1', 'blk3', 'blk4'])
+    expect(next.blocks.map((b) => b.position)).toEqual([1, 2, 3, 4])
+    // With no rows logged, the first iterated set — what cursorFromLogged
+    // would derive — is now blk2's first set at position 1.
+    const first = [...iterateSets(next)][0]!
+    expect(cursorKey(first.cursor)).toBe('1.1.1.1')
+    expect(first.blockExercise.exercise_id).toBe('ex2')
   })
 })

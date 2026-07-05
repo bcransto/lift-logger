@@ -280,7 +280,12 @@ export function isLastSetOfBlock(snapshot: WorkoutSnapshot, cursor: Cursor): boo
 // array index, so every consumer agrees.
 //
 // Only PENDING blocks move. A block is fixed if it has any session_sets row
-// (logged OR skipped), is skipped/done, OR is at/behind the cursor.
+// (logged OR skipped), is skipped/done, OR is strictly behind the cursor.
+// The cursor's OWN block is reorderable while untouched (issue #26 — starting
+// a workout parks the cursor on block 1 before anything is logged, and that
+// must not lock it): the cursor is derived from logged rows everywhere it
+// matters (cursorFromLogged), so after a swap it simply re-derives to the
+// first unaccounted set in the new order.
 // Adjacent-swap only: the arrows skip over fixed anchors rather than leaping
 // them, so a pending block can only trade places with its nearest *pending*
 // neighbour.
@@ -311,8 +316,8 @@ export function swapBlocksByIndex(
   const b = blocks[targetIndex]!
   // Exchange array slots AND position fields so the moved blocks keep
   // position === their new neighbours' order. Every other block's position is
-  // untouched, so the cursor's blockPosition and all existing session_sets
-  // rows stay valid (only pending blocks — ahead of cursor, no rows — move).
+  // untouched, so all existing session_sets rows stay valid (only pending
+  // blocks — no rows — move; the cursor re-derives from rows after the swap).
   blocks[targetIndex] = { ...a, position: b.position }
   blocks[blockIndex] = { ...b, position: a.position }
   return { ...snapshot, blocks }
@@ -322,11 +327,13 @@ export function swapBlocksByIndex(
  * Compute the set of block ids that are FIXED for reorder purposes — i.e. the
  * complement of "pending". A block is reorderable (pending) iff ALL hold:
  *   - it has no session_sets rows at all (`blockIdsWithRows` excludes it),
- *   - it is strictly AFTER the cursor's block in array order,
+ *   - it is AT or AFTER the cursor's block in array order,
  *   - it is not skipped and not done.
- * Everything failing any of those is fixed. Blocks before/at the cursor are
- * always fixed (the cursor's blockPosition and all logged rows must not move).
- * When there is no cursor (workout fully accounted for) nothing is "ahead", so
+ * Everything failing any of those is fixed. Blocks strictly before the cursor
+ * are always fixed (logged rows must not move). The cursor's own block is
+ * reorderable while it has no rows (issue #26) — safe because the cursor is
+ * re-derived from logged rows after every swap, not carried across it.
+ * When there is no cursor (workout fully accounted for) nothing is pending, so
  * every block is fixed. Single source of truth shared by the store action and
  * the OverviewScreen UI so their notions of "pending" can't drift.
  */
@@ -342,9 +349,9 @@ export function fixedBlockIdsForReorder(
     ? snapshot.blocks.findIndex((b) => b.position === cursor.blockPosition)
     : -1
   snapshot.blocks.forEach((b, i) => {
-    const aheadOfCursor = cursor != null && cursorIndex >= 0 && i > cursorIndex
+    const atOrAheadOfCursor = cursor != null && cursorIndex >= 0 && i >= cursorIndex
     const pending =
-      aheadOfCursor &&
+      atOrAheadOfCursor &&
       !blockIdsWithRows.has(b.id) &&
       !skippedBlockIds.has(b.id) &&
       !doneBlockIds.has(b.id)
@@ -356,8 +363,8 @@ export function fixedBlockIdsForReorder(
 /**
  * Find the array index of the nearest reorderable neighbour to `fromIndex` in
  * the given direction, skipping over fixed anchors. `fixedBlockIds` is the set
- * of block ids that may NOT move (logged blocks, the cursor's block, skipped /
- * done blocks). Returns null if `fromIndex` is itself fixed, out of range, or
+ * of block ids that may NOT move (blocks with rows, blocks behind the cursor,
+ * skipped / done blocks). Returns null if `fromIndex` is itself fixed, out of range, or
  * there is no reorderable block on that side. This is the single source of
  * truth for both the store's swap and the UI's arrow-enable state.
  */

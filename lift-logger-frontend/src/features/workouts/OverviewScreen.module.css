@@ -279,13 +279,21 @@ div.blockTap {
 }
 .tileSwap:active { transform: scale(0.98); }
 
-/* + Add Exercise — bottom of the block list when an active session is in
-   progress. Same shape as tileSwap but stands alone (not nested under a tile). */
+/* Session tools row — sits below the block list with the CTA stack when an
+   active session is in progress (issue #26): + Add Exercise fills the row,
+   Reorder sizes to content beside it. */
+.sessionToolsRow {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* + Add Exercise — same shape as tileSwap but stands alone (not nested under
+   a tile). */
 .addExerciseBtn {
-  width: 100%;
+  flex: 1;
   padding: var(--space-3) var(--space-4);
   min-height: 44px;
-  margin-top: var(--space-2);
   background: var(--bg-elev-1);
   color: var(--text);
   border: 1px dashed var(--border-strong);
@@ -315,14 +323,9 @@ div.blockTap {
 .deleteLink:active { opacity: 0.7; }
 
 /* ─── Reorder mode (issue #21) ───────────────────────────────────────
-   Toggle bar sits above the block list; in reorder mode each pending tile
-   gets a ▲/▼ arrow column and fixed anchors get a locked/dimmed treatment. */
-
-.reorderBar {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: calc(var(--space-2) * -1);
-}
+   Toggle lives in the bottom sessionToolsRow (issue #26); in reorder mode
+   each pending tile gets a ▲/▼ arrow column and fixed anchors get a
+   locked/dimmed treatment. */
 
 .reorderToggle {
   padding: var(--space-2) var(--space-4);

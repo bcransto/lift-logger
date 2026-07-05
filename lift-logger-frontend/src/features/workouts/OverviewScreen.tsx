@@ -450,19 +450,6 @@ export function OverviewScreen() {
         {workout.starred ? <span className={styles.pill}>★</span> : null}
       </div>
 
-      {activeSession ? (
-        <div className={styles.reorderBar}>
-          <button
-            type="button"
-            className={`${styles.reorderToggle} ${reorderMode ? styles.reorderToggleActive : ''}`}
-            onClick={onToggleReorder}
-            aria-pressed={reorderMode}
-          >
-            {reorderMode ? 'Done' : 'Reorder'}
-          </button>
-        </div>
-      ) : null}
-
       <ol className={styles.blocks}>
         {snapshot.blocks.map((b, bi) => {
           const { status, done, total } = blockStatusOf(b)
@@ -503,14 +490,25 @@ export function OverviewScreen() {
         })}
       </ol>
 
+      {/* Session tools live at the bottom with the CTA stack (issue #26). */}
       {activeSession ? (
-        <button
-          type="button"
-          className={styles.addExerciseBtn}
-          onClick={() => setAddExerciseOpen(true)}
-        >
-          + Add Exercise
-        </button>
+        <div className={styles.sessionToolsRow}>
+          <button
+            type="button"
+            className={styles.addExerciseBtn}
+            onClick={() => setAddExerciseOpen(true)}
+          >
+            + Add Exercise
+          </button>
+          <button
+            type="button"
+            className={`${styles.reorderToggle} ${reorderMode ? styles.reorderToggleActive : ''}`}
+            onClick={onToggleReorder}
+            aria-pressed={reorderMode}
+          >
+            {reorderMode ? 'Done' : 'Reorder'}
+          </button>
+        </div>
       ) : null}
 
       <div className={styles.startRow}>
