@@ -1,8 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/db'
+import { mmss } from '../../shared/utils/format'
 import styles from './LastAndPrRow.module.css'
 
-type LastSet = { weight: number; reps: number | null }
+type LastSet = { weight: number | null; reps: number | null; duration: number | null }
 type Pr = { weight: number; reps: number | null }
 
 export function useLastAndPr(
@@ -10,13 +11,16 @@ export function useLastAndPr(
   currentSessionId: string | null,
 ): { last: LastSet | null; pr: Pr | null } {
   const data = useLiveQuery(async () => {
-    // Most-recent prior session's heaviest set for this exercise.
+    // Most-recent prior session's best set for this exercise. "Best" ranks
+    // weight, then reps, then duration — so weighted exercises show the
+    // heaviest set while bodyweight (reps-only) and timed sets still get a
+    // LAST value instead of "no history".
     const rows = await db.session_sets.where('exercise_id').equals(exerciseId).toArray()
     const candidates = rows.filter(
       (r) =>
         r.session_id !== currentSessionId &&
         r.skipped !== 1 &&
-        r.actual_weight != null,
+        (r.actual_weight != null || r.actual_reps != null || r.actual_duration_sec != null),
     )
     let last: LastSet | null = null
     if (candidates.length > 0) {
@@ -36,15 +40,20 @@ export function useLastAndPr(
           bestSession = arr
         }
       }
-      // Heaviest set, tiebreak by reps desc.
-      const heaviest = bestSession
+      // Best set: heaviest, tiebreak by reps desc, then duration desc.
+      const best = bestSession
         .slice()
         .sort((a, b) =>
-          (b.actual_weight ?? 0) - (a.actual_weight ?? 0) ||
-          (b.actual_reps ?? 0) - (a.actual_reps ?? 0),
+          (b.actual_weight ?? -1) - (a.actual_weight ?? -1) ||
+          (b.actual_reps ?? -1) - (a.actual_reps ?? -1) ||
+          (b.actual_duration_sec ?? -1) - (a.actual_duration_sec ?? -1),
         )[0]
-      if (heaviest && heaviest.actual_weight != null) {
-        last = { weight: heaviest.actual_weight, reps: heaviest.actual_reps }
+      if (best) {
+        last = {
+          weight: best.actual_weight,
+          reps: best.actual_reps,
+          duration: best.actual_duration_sec,
+        }
       }
     }
 
@@ -86,7 +95,7 @@ export function LastAndPrRow({
       {showName ? <span className={styles.name}>{exerciseName}</span> : null}
       {last ? (
         <span className={styles.stat}>
-          <span className={styles.label}>LAST</span> {fmt(last.weight, last.reps)}
+          <span className={styles.label}>LAST</span> {fmtLast(last)}
         </span>
       ) : null}
       {pr ? (
@@ -100,4 +109,11 @@ export function LastAndPrRow({
 
 function fmt(weight: number, reps: number | null): string {
   return reps != null ? `${weight} × ${reps}` : `${weight}`
+}
+
+function fmtLast(last: { weight: number | null; reps: number | null; duration: number | null }): string {
+  if (last.weight != null) return fmt(last.weight, last.reps)
+  if (last.reps != null) return `× ${last.reps}`
+  if (last.duration != null) return mmss(last.duration)
+  return ''
 }

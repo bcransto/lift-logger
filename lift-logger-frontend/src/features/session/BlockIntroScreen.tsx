@@ -9,6 +9,7 @@ import { RestTimerCard } from './RestTimerCard'
 import { SetCard } from './SetCard'
 import { SavePreferencePrompt } from './SavePreferencePrompt'
 import { ExercisePicker } from './ExercisePicker'
+import { LastAndPrRow } from './LastAndPrRow'
 import { mmss } from '../../shared/utils/format'
 import { setsForRound } from './sessionEngine'
 import type { SessionSetRow, WorkoutSnapshot } from '../../types/schema'
@@ -121,6 +122,15 @@ export function BlockIntroScreen() {
           {block.kind === 'superset' ? 'SUPERSET' : 'CIRCUIT'} · {block.rounds} ROUNDS
         </div>
       ) : null}
+      {sortedExercises.map((be) => (
+        <LastAndPrRow
+          key={`lpr-${be.id}`}
+          exerciseId={be.exercise_id}
+          sessionId={sessionId ?? null}
+          exerciseName={be.name}
+          showName={sortedExercises.length > 1}
+        />
+      ))}
 
       {autoStartSec > 0 ? (
         <RestTimerCard
