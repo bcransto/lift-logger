@@ -72,6 +72,7 @@ export function BlockView() {
   const advanceCursor = useSessionStore((s) => s.advanceCursor)
   const skipRest = useSessionStore((s) => s.skipRest)
   const finishBlock = useSessionStore((s) => s.finishBlock)
+  const endWorkout = useSessionStore((s) => s.endWorkout)
   const restSkippedAt = useSessionStore((s) => s.restSkippedAt)
   const undoSkip = useSessionStore((s) => s.undoSkip)
   const swapExerciseInBlock = useSessionStore((s) => s.swapExerciseInBlock)
@@ -239,15 +240,19 @@ export function BlockView() {
     : '0:00'
   const liftNumber = cardNumber(snapshot, cursor)
 
-  // End Workout is a review-then-end flow: tap End Workout in BlockView (or
-  // Finish Workout in BCO) routes the user to OverviewScreen first so they
-  // can see final block status (Done/Partial/Skipped) before the irreversible
-  // end. The confirm + endWorkout call happens on Overview's "End Workout"
-  // button, not here.
-  const onEnd = () => {
-    if (session?.workout_id) {
-      navigate(`/workout/${session.workout_id}`)
-    }
+  // End Workout goes straight to Summary (issue #30). No confirm dialog and
+  // no review trip through OverviewScreen — Summary's "Return to workout"
+  // button is the undo for an accidental tap. Navigate FIRST so this
+  // component unmounts before endWorkout's store reset can fire the
+  // cursor-null effect above (which would route to Overview instead).
+  const onEnd = async () => {
+    if (!sessionId) return
+    navigate(`/session/${sessionId}/summary`)
+    await stopActiveTimer()
+    await endWorkout(null, {
+      sessionId,
+      alsoEndOrphansForWorkoutId: session?.workout_id ?? undefined,
+    })
   }
 
   // Finish (labeled "Mark as Done" in the UI) confirms when the block has
@@ -951,49 +956,3 @@ function cardNumber(snapshot: WorkoutSnapshot, cursor: Cursor) {
   return { current: hit || 1, total: Math.max(1, total) }
 }
 
-// Shared end-workout confirm. Surfaces both the unlogged-set count (only in
-// non-skipped blocks — skipped sets aren't "left undone") AND the count of
-// blocks the user explicitly Skipped earlier. Skipped blocks are pending in
-// the user's intent and shouldn't be quietly abandoned by an end-workout
-// tap (or by the auto-done on the last block — see BlockView's cursor-null
-// effect, which routes to Overview when skipped blocks remain).
-export function confirmEndWorkout(
-  snapshot: WorkoutSnapshot,
-  logged: SessionSetRow[],
-  skippedBlockIds: ReadonlySet<string>,
-): boolean {
-  const unlogged = countUnloggedInNonSkippedBlocks(snapshot, logged, skippedBlockIds)
-  const skipped = skippedBlockIds.size
-  if (unlogged === 0 && skipped === 0) return true
-  const parts: string[] = []
-  if (unlogged > 0) parts.push(`${unlogged} unlogged set${unlogged === 1 ? '' : 's'}`)
-  if (skipped > 0) parts.push(`${skipped} skipped block${skipped === 1 ? '' : 's'}`)
-  return window.confirm(`Finish workout? You have ${parts.join(' and ')}.`)
-}
-
-function countUnloggedInNonSkippedBlocks(
-  snapshot: WorkoutSnapshot,
-  logged: SessionSetRow[],
-  skippedBlockIds: ReadonlySet<string>,
-): number {
-  const doneKeys = new Set(logged.map(cursorKeyFromRow))
-  let unlogged = 0
-  for (const b of snapshot.blocks) {
-    if (skippedBlockIds.has(b.id)) continue
-    const rounds = b.kind === 'single' ? 1 : b.rounds
-    for (let r = 1; r <= rounds; r++) {
-      for (const be of b.exercises) {
-        for (const t of setsForRound(be, r)) {
-          const key = cursorKey({
-            blockPosition: b.position,
-            blockExercisePosition: be.position,
-            roundNumber: r,
-            setNumber: t.set_number,
-          })
-          if (!doneKeys.has(key)) unlogged++
-        }
-      }
-    }
-  }
-  return Math.max(0, unlogged - 1)
-}

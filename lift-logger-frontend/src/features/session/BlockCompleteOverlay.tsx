@@ -7,7 +7,8 @@
 //   - Not last block: Next block is primary
 //   - Last block:     Finish workout is primary; Next block is hidden
 //
-// Finish workout requires confirmation regardless — a mis-tap is expensive.
+// Finish workout ends the session and lands on Summary directly (issue #30);
+// Summary's "Return to workout" button is the undo for a mis-tap.
 
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -31,6 +32,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const appendSetToCurrentBlock = useSessionStore((s) => s.appendSetToCurrentBlock)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
+  const endWorkout = useSessionStore((s) => s.endWorkout)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
   const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
   const navigate = useNavigate()
@@ -136,15 +138,19 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   }
 
   const onFinishWorkout = async () => {
-    // Review-then-end: route to OverviewScreen so the user can see final
-    // block status before the irreversible end. The confirm + endWorkout
-    // call happens on Overview's End Workout button. Stop the active timer
-    // here since the user has explicitly chosen to leave the active flow.
+    // End + straight to Summary (issue #30) — no confirm, no review trip
+    // through OverviewScreen; Summary's "Return to workout" is the undo.
+    // Navigate first so BlockView (our host) unmounts before the store
+    // reset can fire its cursor-null routing effect. Stop the active timer
+    // so a stale countdown can't resurrect if the session is reopened.
+    if (!sessionId) return
+    onClose()
+    navigate(`/session/${sessionId}/summary`)
     await stopActiveTimer()
-    if (session?.workout_id) {
-      onClose()
-      navigate(`/workout/${session.workout_id}`)
-    }
+    await endWorkout(null, {
+      sessionId,
+      alsoEndOrphansForWorkoutId: session?.workout_id ?? undefined,
+    })
   }
 
   // ─── render ─────────────────────────────────────────────────────────

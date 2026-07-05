@@ -12,7 +12,6 @@ import {
 import { Button } from '../../shared/components/Button'
 import { SessionHeader } from '../../shared/components/SessionHeader'
 import { SetPatternRenderer } from './SetPatternRenderer'
-import { confirmEndWorkout } from '../session/BlockView'
 import {
   cursorKey,
   cursorKeyFromRow,
@@ -262,8 +261,9 @@ export function OverviewScreen() {
   // exits are: tap a skipped tile to revisit, or tap the bottom CTA to end
   // the workout. The CTA below flips into "End Workout" for this state.
   const onEndFromOverview = async () => {
-    if (!activeSession || !snapshot) return
-    if (!confirmEndWorkout(snapshot, logged ?? [], skippedBlockIds)) return
+    if (!activeSession) return
+    // No confirm dialog (issue #30) — the Summary screen's "Return to
+    // workout" button is the undo for an accidental End tap.
     // Pass the explicit session id — the store's hydrated sessionId may be
     // null (user came directly to /workout/:id without going through a
     // session route, or already ended a session this run leaving an orphan
@@ -519,10 +519,9 @@ export function OverviewScreen() {
           </Button>
         ) : cursor ? (
           <>
-            {/* Cursor non-null: review-then-end pair. Resume is the primary
-               action; End Workout is a secondary affordance for the user
-               who came here via "End Workout" in BlockView/BCO and intends
-               to actually finish. End confirms via confirmEndWorkout. */}
+            {/* Cursor non-null: Resume is the primary action; End Workout is
+               a secondary affordance. End goes straight to Summary (issue
+               #30) — Summary's "Return to workout" is the undo. */}
             <Button variant="primary" block onClick={onResume}>
               Resume Workout →
             </Button>

@@ -13,6 +13,7 @@ export function SummaryScreen() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
   const complete = useSessionStore((s) => s.completeSession)
+  const reopenSession = useSessionStore((s) => s.reopenSession)
   const [completing, setCompleting] = useState(false)
 
   const session = useLiveQuery(() => (sessionId ? db.sessions.get(sessionId) : undefined), [sessionId])
@@ -73,6 +74,15 @@ export function SummaryScreen() {
     await complete()
     void syncService.sync()
     navigate('/', { replace: true })
+  }
+
+  // Undo an accidental End Workout (issue #30): flip the session back to
+  // active and land on the workout's OverviewScreen, where Resume takes the
+  // user back to their exact block.
+  const onReturnToWorkout = async () => {
+    if (completing || !session.workout_id) return
+    await reopenSession(session.id)
+    navigate(`/workout/${session.workout_id}`, { replace: true })
   }
 
   const now = Date.now()
@@ -136,6 +146,11 @@ export function SummaryScreen() {
         <Button variant="primary" block onClick={onDone}>
           Done
         </Button>
+        {session.workout_id ? (
+          <Button variant="ghost" block onClick={() => void onReturnToWorkout()}>
+            ← Return to workout
+          </Button>
+        ) : null}
         <Button variant="ghost" block onClick={() => alert('Notes — coming soon')}>
           Add note
         </Button>

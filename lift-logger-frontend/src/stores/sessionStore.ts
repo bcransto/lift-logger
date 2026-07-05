@@ -174,6 +174,11 @@ export type SessionState = {
       alsoEndOrphansForWorkoutId?: string
     },
   ) => Promise<void>
+  /** Undo an End Workout (issue #30): flip the session back to 'active' and
+   *  re-hydrate the store onto it. The ended interval is folded into
+   *  accumulated_paused_ms so time spent parked on the Summary screen doesn't
+   *  count toward duration_sec on the next end. */
+  reopenSession: (sessionId: string) => Promise<void>
   /** Mark every active session with zero session_sets rows as 'abandoned'.
    *  Optionally scope to a single workout id. Returns the count abandoned.
    *  Called from HomeScreen mount (sweep all) and from startSession (sweep
@@ -1065,6 +1070,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
     get().resetLocal()
+  },
+
+  async reopenSession(sessionId) {
+    const now = Date.now()
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    // Treat the ended→reopened gap as paused time so it doesn't inflate
+    // duration_sec when the user ends again.
+    const accum = (ses.accumulated_paused_ms ?? 0) + (ses.ended_at != null ? now - ses.ended_at : 0)
+    await db.sessions.put({
+      ...ses,
+      status: 'active',
+      ended_at: null,
+      duration_sec: null,
+      accumulated_paused_ms: accum,
+      updated_at: now,
+    })
+    await get().hydrate(sessionId)
   },
 
   async abandonEmptyActiveSessions(workoutId) {

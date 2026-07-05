@@ -171,7 +171,7 @@ Round-boundary rest fallback uses [`restForCursor` / `restAtBoundary`](lift-logg
 
 Multi-round blocks (`rounds > 1`) render a `──── R{n} / {total} ────` divider between rounds on both `BlockIntroScreen` (all rounds including R1) and the active `BlockView` stack (between rounds, skipping R1).
 
-The secondary action row above the card stack is **Skip Block · Finish Block · End Workout** on both render paths (factored as `<SessionActions>` inside [BlockView.tsx](lift-logger-frontend/src/features/session/BlockView.tsx)). Skip Block adds the block to `skippedBlockIds` and advances. Finish Block adds it to `doneBlockIds` and opens the BlockCompleteOverlay. **End Workout no longer goes straight to /summary** — it routes the user to OverviewScreen so they can review final block status before the irreversible end. The actual `confirmEndWorkout(snapshot, logged, skippedBlockIds)` confirm + `endWorkout()` happens on Overview's End Workout button.
+The secondary action row above the card stack is **Skip Block · Finish Block · End Workout** on both render paths (factored as `<SessionActions>` inside [BlockView.tsx](lift-logger-frontend/src/features/session/BlockView.tsx)). Skip Block adds the block to `skippedBlockIds` and advances. Finish Block adds it to `doneBlockIds` and opens the BlockCompleteOverlay. **End Workout ends the session immediately and goes straight to /summary** (issue #30 — no confirm dialog, no review trip through Overview). SummaryScreen's "← Return to workout" button is the undo: `reopenSession(sessionId)` flips the session back to `active`, folds the ended gap into `accumulated_paused_ms` so parked-on-summary time doesn't inflate `duration_sec`, re-hydrates the store, and lands on OverviewScreen (Resume takes the user back to their exact block). BlockView's `onEnd` navigates to /summary *before* awaiting `endWorkout` — navigating after would race the cursor-null effect (store reset → cursor null → effect routes to Overview instead).
 
 A "Skip Set" button used to live in this row but was removed once tap-focus → Start auto-skips intermediate untouched sets — tapping the very next set's Start button reproduces Skip Set's effect, plus there's no equivalent for "skip THIS set when there's no future set to tap" because in that situation Finish Block / End Workout cover the user's actual intent. The store still exposes `skipCurrentSet` + `undoSkip` and BlockView still mounts `<UndoToast>` — both intact for potential reuse from other surfaces, just with no producer in BlockView itself today.
 
@@ -182,7 +182,7 @@ A "Skip Set" button used to live in this row but was removed once tap-focus → 
 - **Next block →** — `jumpTo(firstCursorOfBlock(snapshot, nextBlockPosition))`, closes overlay. Block timer keeps ticking. BlockView's cursor→URL effect then routes to `/intro/{N+1}`. Hidden on the last block. Top of the stack — most-common next action.
 - **+ Add a set** — `appendSetToCurrentBlock()`: session-only snapshot mutation, inherits just-recorded actuals as targets, resets active timer, jumps cursor to the new set.
 - **Workout overview** — navigates to `/workout/:id` (the **OverviewScreen**, which is now the live workout view; the in-session `WorkoutViewOverlay` is deleted). Calls `onClose()` first to dismiss the BCO. The BlockView ☰ Workout button does the same nav.
-- **Finish workout** — same review-then-end semantics as BlockView's End Workout. Stops the active timer, navigates to OverviewScreen (NOT directly to /summary). Primary button on the last block; secondary otherwise. Shown on every BCO because users often treat the final block as optional. The `nextBlockPosition` calc skips past blocks already in `doneBlockIds` / `skippedBlockIds` so "Next block →" doesn't shove the user back into a finished one when they came in via Resume on a skipped block.
+- **Finish workout** — same end-immediately semantics as BlockView's End Workout (issue #30): stops the active timer, calls `endWorkout()`, navigates directly to /summary (Summary's "Return to workout" is the undo). Primary button on the last block; secondary otherwise. Shown on every BCO because users often treat the final block as optional. The `nextBlockPosition` calc skips past blocks already in `doneBlockIds` / `skippedBlockIds` so "Next block →" doesn't shove the user back into a finished one when they came in via Resume on a skipped block.
 
 ### Active timer — one slot, persisted
 
@@ -219,10 +219,10 @@ The cursor temporarily pointing into a Done block is fine — `blockStatusOf` pr
 
 **Bottom CTA is 3-way + a fourth secondary**: 
 - No active session → Start Workout (primary)
-- Active + cursor non-null → **Resume Workout (primary) + End Workout (secondary, beneath)** — the End-Workout-review flow (chunk #12). The user came here via the explicit End Workout button in BlockView/BCO and gets a chance to review state before the actual end.
-- Active + cursor null → End Workout (primary). Reached when the user finished all non-skipped blocks but had block-level skips remaining; BlockView's workout-complete effect routes here when `skippedBlockIds.size > 0`. Otherwise the effect routes to /summary.
+- Active + cursor non-null → **Resume Workout (primary) + End Workout (secondary, beneath)**.
+- Active + cursor null → End Workout (primary). Reached when the user finished all non-skipped blocks; BlockView's workout-complete effect routes here for a last-minute review (add a set, + Add Exercise, revisit skipped blocks).
 
-End Workout fires `confirmEndWorkout(snapshot, logged, skippedBlockIds)` (block-only copy: `X unlogged · Y skipped blocks`).
+End Workout ends the session (`endWorkout` with explicit `sessionId` + orphan cleanup) and navigates straight to /summary — no confirm dialog (issue #30; the old `confirmEndWorkout` window.confirm was deleted). SummaryScreen's "← Return to workout" is the undo.
 
 **Active session selector** (both OverviewScreen + SessionHeader): pick the **most-recently-started** active session, not Dexie's default lex-by-id ordering. Defensive against multi-active-session states from crashes/multi-tab.
 
