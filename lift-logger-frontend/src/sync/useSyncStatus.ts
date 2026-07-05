@@ -27,7 +27,18 @@ export function useAutoSync() {
     const online = () => {
       void syncService.sync()
     }
+    // iOS PWA resume from the app switcher doesn't remount or fire 'online' —
+    // visibilitychange is the only signal we get.
+    const visible = () => {
+      if (document.visibilityState === 'visible') {
+        void syncService.sync()
+      }
+    }
     window.addEventListener('online', online)
-    return () => window.removeEventListener('online', online)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.removeEventListener('online', online)
+      document.removeEventListener('visibilitychange', visible)
+    }
   }, [])
 }
