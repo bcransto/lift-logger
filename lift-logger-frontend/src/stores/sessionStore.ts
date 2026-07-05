@@ -23,6 +23,7 @@ import {
   setsForRound,
   swapBlocksByIndex,
 } from '../features/session/sessionEngine'
+import { blockFromSpec, type NewBlockSpec } from '../features/session/blockSpec'
 import { IDLE_TIMER, type TimerKind, type TimerSnapshot } from '../features/timer/TimerService'
 import type {
   Cursor,
@@ -30,7 +31,6 @@ import type {
   SavePreference,
   SessionRow,
   SessionSetRow,
-  SnapshotBlock,
   SnapshotBlockExercise,
   SnapshotSetTarget,
   WorkoutSnapshot,
@@ -95,13 +95,12 @@ export type StructuralEdit =
       kind: 'removeLastRound'
       blockPosition: number
     }
-  // Append a brand-new single-kind block at the end of the snapshot, holding
-  // one exercise with a single placeholder set. Session-only mutation —
-  // never written back to the template tables.
+  // Append a brand-new block (any kind) at the end of the snapshot, built
+  // from an AddBlockOverlay spec. Session-only mutation — never written
+  // back to the template tables.
   | {
       kind: 'appendBlock'
-      exerciseId: string
-      exerciseName: string
+      spec: NewBlockSpec
     }
 
 export type SessionState = {
@@ -202,15 +201,12 @@ export type SessionState = {
   /** Append one set to the current block inheriting actuals as targets. */
   appendSetToCurrentBlock: () => Promise<void>
   /**
-   * Append a brand-new single-kind block (one exercise, one placeholder set)
-   * to the end of the session snapshot. Session-only mutation. Jumps cursor
-   * to the new block's first set. Returns the new cursor (or null if no
-   * active session/snapshot).
+   * Append a brand-new block built from an AddBlockOverlay spec to the end
+   * of the session snapshot. Session-only mutation. Jumps cursor to the new
+   * block's first set. Returns the new cursor (or null if no active
+   * session/snapshot).
    */
-  appendBlockToCurrentSession: (
-    exerciseId: string,
-    exerciseName: string,
-  ) => Promise<Cursor | null>
+  appendBlockToCurrentSession: (spec: NewBlockSpec) => Promise<Cursor | null>
   /**
    * Swap the exercise in a single-kind block for another. Mutates the
    * session's workout_snapshot only (template untouched). Caller is
@@ -244,35 +240,7 @@ export function applyEditToSnapshot(
 ): WorkoutSnapshot {
   if (edit.kind === 'appendBlock') {
     const nextPosition = snapshot.blocks.reduce((m, b) => Math.max(m, b.position), 0) + 1
-    const newBlock: SnapshotBlock = {
-      id: uuid('block') as unknown as SnapshotBlock['id'],
-      position: nextPosition,
-      kind: 'single',
-      rounds: 1,
-      rest_after_sec: 60,
-      setup_cue: null,
-      exercises: [
-        {
-          id: uuid('be') as unknown as SnapshotBlockExercise['id'],
-          exercise_id: edit.exerciseId as unknown as SnapshotBlockExercise['exercise_id'],
-          name: edit.exerciseName,
-          position: 1,
-          alt_exercise_ids: [],
-          sets: [
-            {
-              set_number: 1,
-              round_number: 1,
-              target_weight: null,
-              target_reps: 10,
-              target_duration_sec: null,
-              target_reps_each: false,
-              is_peak: false,
-              rest_after_sec: 60,
-            },
-          ],
-        },
-      ],
-    }
+    const newBlock = blockFromSpec(edit.spec, nextPosition)
     return { ...snapshot, blocks: [...snapshot.blocks, newBlock] }
   }
   const blocks = snapshot.blocks.map((block) => {
@@ -1291,13 +1259,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  async appendBlockToCurrentSession(exerciseId, exerciseName) {
+  async appendBlockToCurrentSession(spec) {
     const { sessionId, snapshot } = get()
     if (!sessionId || !snapshot) return null
     const nextSnapshot = applyEditToSnapshot(snapshot, {
       kind: 'appendBlock',
-      exerciseId,
-      exerciseName,
+      spec,
     })
     const newBlock = nextSnapshot.blocks[nextSnapshot.blocks.length - 1]
     if (!newBlock) return null

@@ -21,7 +21,9 @@ import {
   setsForRound,
 } from '../session/sessionEngine'
 import { parseJsonArray, relativeDate } from '../../shared/utils/format'
+import { AddBlockOverlay } from '../session/AddBlockOverlay'
 import { ExercisePicker } from '../session/ExercisePicker'
+import type { NewBlockSpec } from '../session/blockSpec'
 import type { Cursor, SessionSetRow, SnapshotBlock, WorkoutSnapshot } from '../../types/schema'
 import styles from './OverviewScreen.module.css'
 
@@ -159,8 +161,8 @@ export function OverviewScreen() {
   const [tapFocusBlockId, setTapFocusBlockId] = useState<string | null>(null)
   // Block currently being swapped (ExercisePicker overlay target). Null = closed.
   const [swapTargetBlockId, setSwapTargetBlockId] = useState<string | null>(null)
-  // ExercisePicker open in "append" mode (+ Add Exercise CTA).
-  const [addExerciseOpen, setAddExerciseOpen] = useState(false)
+  // AddBlockOverlay open (+ Add Block CTA, issue #4).
+  const [addBlockOpen, setAddBlockOpen] = useState(false)
   // Reorder mode (issue #21): when on, tiles show ▲/▼ for pending blocks and
   // the tap-to-reveal action row is suppressed. Only meaningful with an
   // active session (the toggle is hidden otherwise).
@@ -312,12 +314,11 @@ export function OverviewScreen() {
     setSwapTargetBlockId(null)
   }
 
-  const onAppendExercisePick = async (exerciseId: string) => {
+  const onAddBlock = async (spec: NewBlockSpec) => {
     if (!activeSession) return
     await ensureStoreOnSession(activeSession.id)
-    const ex = await db.exercises.get(exerciseId)
-    const target = await appendBlockToCurrentSession(exerciseId, ex?.name ?? 'Exercise')
-    setAddExerciseOpen(false)
+    const target = await appendBlockToCurrentSession(spec)
+    setAddBlockOpen(false)
     if (target) {
       navigate(`/session/${activeSession.id}/intro/${target.blockPosition}`)
     }
@@ -496,9 +497,9 @@ export function OverviewScreen() {
           <button
             type="button"
             className={styles.addExerciseBtn}
-            onClick={() => setAddExerciseOpen(true)}
+            onClick={() => setAddBlockOpen(true)}
           >
-            + Add Exercise
+            + Add Block
           </button>
           <button
             type="button"
@@ -559,13 +560,11 @@ export function OverviewScreen() {
         )
       })() : null}
 
-      {addExerciseOpen ? (
-        <ExercisePicker
-          mode="append"
-          currentExerciseId={null}
-          currentExerciseName={null}
-          onPick={onAppendExercisePick}
-          onCancel={() => setAddExerciseOpen(false)}
+      {addBlockOpen && activeSession ? (
+        <AddBlockOverlay
+          currentSessionId={activeSession.id}
+          onAdd={onAddBlock}
+          onCancel={() => setAddBlockOpen(false)}
         />
       ) : null}
     </div>

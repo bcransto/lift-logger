@@ -220,7 +220,9 @@ The cursor temporarily pointing into a Done block is fine — `blockStatusOf` pr
 **Bottom CTA is 3-way + a fourth secondary**: 
 - No active session → Start Workout (primary)
 - Active + cursor non-null → **Resume Workout (primary) + End Workout (secondary, beneath)**.
-- Active + cursor null → End Workout (primary). Reached when the user finished all non-skipped blocks; BlockView's workout-complete effect routes here for a last-minute review (add a set, + Add Exercise, revisit skipped blocks).
+- Active + cursor null → End Workout (primary). Reached when the user finished all non-skipped blocks; BlockView's workout-complete effect routes here for a last-minute review (add a set, + Add Block, revisit skipped blocks).
+
+**+ Add Block** (issue #4; formerly + Add Exercise) sits in the session-tools row (active-session only). Opens [AddBlockOverlay.tsx](lift-logger-frontend/src/features/session/AddBlockOverlay.tsx) — a two-step wizard: kind picker (single / superset / circuit) → kind-specific params with target weight/reps prefilled per exercise from `queryLastAndPr` (the one-shot form of the LAST lookup, seeded at pick time so the reactive query can't stomp manual edits). The overlay is commit-free: it emits a `NewBlockSpec` (see [blockSpec.ts](lift-logger-frontend/src/features/session/blockSpec.ts), unit-tested) via `onAdd`, and the caller commits — OverviewScreen calls `appendBlockToCurrentSession(spec)` (session-only snapshot append) and navigates to the new block's intro. Issue #32's create-workout flow will reuse the overlay with a template-row committer. Generation notes: superset/circuit emit round-1 anchor sets only (`rounds: N` inherits); circuit's **last** station gets `rest_after_sec: null` so the round boundary falls back to block rest — a set rest > 0 would win in `restAtBoundary`.
 
 End Workout ends the session (`endWorkout` with explicit `sessionId` + orphan cleanup) and navigates straight to /summary — no confirm dialog (issue #30; the old `confirmEndWorkout` window.confirm was deleted). SummaryScreen's "← Return to workout" is the undo.
 
