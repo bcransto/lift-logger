@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
-import { useSessionStore } from '../../stores/sessionStore'
+import { useSessionStore, parseDoneBlocks, parseSkippedBlocks } from '../../stores/sessionStore'
 import { syncService } from '../../sync/syncService'
 import { Button } from '../../shared/components/Button'
 import { dowShort, monShort, timeShort, mmss } from '../../shared/utils/format'
@@ -56,16 +56,22 @@ export function SummaryScreen() {
 
   // Session log — one entry per (block, exercise) in workout order, built
   // from the frozen snapshot so unreached/skipped exercises still appear.
-  // Status derives purely from planned-vs-logged counts; block dispositions
-  // (done_block_ids / skipped_block_ids) deliberately don't change the
-  // label — once the workout is over, "2 of 5 sets" is the fact that
-  // matters, not which button abandoned the block.
+  // Status honors the block's disposition so this screen agrees with the
+  // OverviewScreen: a block the user marked Done reads DONE (keeping the
+  // "2/3" count as detail), a block marked Skipped reads SKIPPED. Only
+  // undisposed blocks fall back to deriving status from logged-vs-planned
+  // counts. (Issue #33 — the two screens disagreed when a block was marked
+  // done with sets still unlogged.)
+  const doneBlockIds = parseDoneBlocks(session.done_block_ids)
+  const skippedBlockIds = parseSkippedBlocks(session.skipped_block_ids)
   type EntryStatus = 'done' | 'partial' | 'skipped'
   const entries = (snapshot?.blocks ?? [])
     .slice()
     .sort((a, b) => a.position - b.position)
     .flatMap((b) => {
       const rounds = b.kind === 'single' ? 1 : b.rounds
+      const blockDone = doneBlockIds.has(b.id)
+      const blockSkipped = skippedBlockIds.has(b.id)
       return b.exercises
         .slice()
         .sort((x, y) => x.position - y.position)
@@ -76,8 +82,15 @@ export function SummaryScreen() {
             (r) => r.block_position === b.position && r.block_exercise_position === be.position,
           )
           const total = Math.max(planned, rows.length)
-          const status: EntryStatus =
-            rows.length === 0 ? 'skipped' : rows.length >= total ? 'done' : 'partial'
+          const status: EntryStatus = blockDone
+            ? 'done'
+            : blockSkipped
+              ? 'skipped'
+              : rows.length === 0
+                ? 'skipped'
+                : rows.length >= total
+                  ? 'done'
+                  : 'partial'
           return {
             key: `${b.position}.${be.position}`,
             name: be.name,
