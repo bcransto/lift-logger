@@ -104,6 +104,32 @@ export function SummaryScreen() {
         })
     })
 
+  // Per-block notes (issue #34) — the free-text comments left on the
+  // end-of-block screen. Keyed by block id; resolve names from the snapshot.
+  const blockNotes = (() => {
+    if (!session.block_notes) return [] as { key: string; name: string; note: string }[]
+    let obj: Record<string, unknown>
+    try {
+      obj = JSON.parse(session.block_notes)
+    } catch {
+      return []
+    }
+    if (!obj || typeof obj !== 'object') return []
+    const blocks = snapshot?.blocks ?? []
+    return Object.entries(obj)
+      .filter(([, note]) => typeof note === 'string' && note.trim() !== '')
+      .map(([blockId, note]) => {
+        const blk = blocks.find((b) => b.id === blockId)
+        return {
+          key: blockId,
+          name: blk ? blk.exercises.map((e) => e.name).join(' + ') : 'Block',
+          position: blk?.position ?? 0,
+          note: note as string,
+        }
+      })
+      .sort((a, b) => a.position - b.position)
+  })()
+
   const nameOf = (exerciseId: string): string => {
     if (!snapshot) return exerciseId
     for (const b of snapshot.blocks)
@@ -185,6 +211,18 @@ export function SummaryScreen() {
           </div>
         ))}
       </div>
+
+      {blockNotes.length > 0 ? (
+        <div className={styles.notes}>
+          <div className={styles.notesLabel}>BLOCK NOTES</div>
+          {blockNotes.map((n) => (
+            <div key={n.key} className={styles.noteRow}>
+              <div className={styles.noteName}>{n.name}</div>
+              <div className={styles.noteText}>{n.note}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className={styles.footer}>
         <Button variant="primary" block onClick={onDone}>

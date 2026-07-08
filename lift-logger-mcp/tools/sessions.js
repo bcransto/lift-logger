@@ -85,6 +85,9 @@ function getSessionHistory({ workoutId, status, startDate, endDate, limit = 50 }
     pausedAt: r.paused_at ?? null,
     skippedBlockIds: safeParseArray(r.skipped_block_ids),
     accumulatedPausedMs: r.accumulated_paused_ms ?? 0,
+    // schema v6 — per-block notes. No snapshot joined here, so blockName is null;
+    // call get_session for the block-name-resolved version.
+    blockNotes: resolveBlockNotes(r.block_notes, null),
   }));
 }
 
@@ -130,6 +133,11 @@ function getSession({ sessionId }) {
   let snapshot = null;
   try { snapshot = JSON.parse(session.workout_snapshot); } catch { /* leave null */ }
 
+  // Per-block notes (schema v6) — the user's free-text comment when finishing a
+  // block ("bump target weight by 5"). Stored as JSON keyed by block id; join
+  // against the snapshot so Claude gets block names + exercises for context.
+  const blockNotes = resolveBlockNotes(session.block_notes, snapshot);
+
   return {
     id: session.id,
     workoutId: session.workout_id,
@@ -148,9 +156,38 @@ function getSession({ sessionId }) {
     workTimerStartedAt: session.work_timer_started_at ?? null,
     workTimerDurationSec: session.work_timer_duration_sec ?? null,
     pendingActuals: session.pending_actuals ? (() => { try { return JSON.parse(session.pending_actuals); } catch { return null; } })() : null,
+    blockNotes,
     snapshot,
     exercises: Array.from(byExercise.values()),
   };
+}
+
+/**
+ * Parse sessions.block_notes (JSON object keyed by block id) into an array of
+ * { blockId, blockPosition, blockName, note }, resolving block names from the
+ * workout snapshot when available. Returns [] for empty/corrupt input.
+ */
+function resolveBlockNotes(raw, snapshot) {
+  if (!raw) return [];
+  let obj;
+  try { obj = JSON.parse(raw); } catch { return []; }
+  if (!obj || typeof obj !== 'object') return [];
+  const blocks = Array.isArray(snapshot?.blocks) ? snapshot.blocks : [];
+  return Object.entries(obj)
+    .filter(([, note]) => typeof note === 'string' && note.trim() !== '')
+    .map(([blockId, note]) => {
+      const blk = blocks.find((b) => b.id === blockId) || null;
+      const blockName = blk
+        ? (Array.isArray(blk.exercises) ? blk.exercises.map((e) => e.name).join(' + ') : null)
+        : null;
+      return {
+        blockId,
+        blockPosition: blk ? blk.position : null,
+        blockName,
+        note,
+      };
+    })
+    .sort((a, b) => (a.blockPosition ?? 0) - (b.blockPosition ?? 0));
 }
 
 /**

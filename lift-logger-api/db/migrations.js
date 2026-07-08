@@ -6,7 +6,7 @@
  * auto-init that happens when requiring database.js.
  */
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 const MIGRATIONS = [
   // v1 is the baseline covered by schema.js; no-op migration body, just records the version.
@@ -146,6 +146,19 @@ const MIGRATIONS = [
       const cols = database.prepare('PRAGMA table_info(workouts)').all();
       if (!cols.some((c) => c.name === 'deleted_at')) {
         database.exec('ALTER TABLE workouts ADD COLUMN deleted_at INTEGER');
+      }
+    }
+  },
+  // v6 — per-block session notes. block_notes is a JSON object keyed by block id
+  // ({ "<blockId>": "note text" }) so the note survives block reorder and mirrors
+  // the JSON-on-sessions pattern used by skipped_block_ids / done_block_ids.
+  // Nullable, so pre-v6 clients push rows without it and the generic upsert fills null.
+  {
+    version: 6,
+    up(database) {
+      const cols = database.prepare('PRAGMA table_info(sessions)').all();
+      if (!cols.some((c) => c.name === 'block_notes')) {
+        database.exec('ALTER TABLE sessions ADD COLUMN block_notes TEXT');
       }
     }
   }

@@ -129,6 +129,9 @@ export type SessionRow = {
   // schema v4 — blocks the user explicitly Finished (regardless of whether
   // every set was logged). Mutually exclusive with skipped_block_ids per id.
   done_block_ids: string | null // JSON array of block ids
+  // schema v6 — per-block free-text notes ("bump target weight by 5"), entered
+  // on the end-of-block screen. JSON object keyed by block id.
+  block_notes: string | null // JSON: Record<blockId, string>
 }
 
 // Phase 2: stash for Set-view edits on the focused set. Applied to session_sets on logSet.

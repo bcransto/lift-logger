@@ -10,7 +10,7 @@
 // Finish workout ends the session and lands on Summary directly (issue #30);
 // Summary's "Return to workout" button is the undo for a mis-tap.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../db/db'
@@ -32,6 +32,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   const jumpTo = useSessionStore((s) => s.jumpTo)
   const appendSetToCurrentBlock = useSessionStore((s) => s.appendSetToCurrentBlock)
   const stopActiveTimer = useSessionStore((s) => s.stopActiveTimer)
+  const setBlockNote = useSessionStore((s) => s.setBlockNote)
   const endWorkout = useSessionStore((s) => s.endWorkout)
   const skippedBlockIds = useSessionStore((s) => s.skippedBlockIds)
   const doneBlockIds = useSessionStore((s) => s.doneBlockIds)
@@ -57,6 +58,36 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
   }, [])
+
+  // ─── per-block note (issue #34) ─────────────────────────────────────
+  // All hooks must run before the early returns below (React hooks-order rule
+  // — CLAUDE.md), so derive the block id here rather than from `block`.
+  const noteBlockId = useMemo(
+    () => snapshot?.blocks.find((b) => b.position === blockPosition)?.id ?? null,
+    [snapshot, blockPosition],
+  )
+  const [noteText, setNoteText] = useState('')
+  // Seed the textarea from the stored note exactly once per block — session is a
+  // live query that re-fires on every write (including our own save), so seeding
+  // on each session update would clobber the user mid-type.
+  const seededForBlock = useRef<string | null>(null)
+  useEffect(() => {
+    if (!noteBlockId || !session) return
+    if (seededForBlock.current === noteBlockId) return
+    seededForBlock.current = noteBlockId
+    let stored = ''
+    if (session.block_notes) {
+      try {
+        const parsed = JSON.parse(session.block_notes)
+        if (parsed && typeof parsed === 'object') stored = parsed[noteBlockId] ?? ''
+      } catch { /* corrupt — leave blank */ }
+    }
+    setNoteText(stored)
+  }, [noteBlockId, session])
+
+  const saveNote = () => {
+    if (noteBlockId) void setBlockNote(noteBlockId, noteText)
+  }
 
   if (!snapshot) return null
 
@@ -113,11 +144,13 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
 
   // ─── actions ────────────────────────────────────────────────────────
   const onAddSet = async () => {
+    saveNote()
     await appendSetToCurrentBlock()
     onClose()
   }
 
   const onNextBlock = () => {
+    saveNote()
     // Jump cursor directly to the first set of the next block. Works whether
     // the user completed the block normally (Record on last set) or ended it
     // early via End Block with unlogged sets remaining. BlockView's cursor→URL
@@ -129,6 +162,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
   }
 
   const onWorkoutOverview = () => {
+    saveNote()
     // Navigate to the (now living) OverviewScreen for this workout. BCO is
     // dismissed by the route change.
     if (session?.workout_id) {
@@ -151,6 +185,7 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
     // commits lifts the suppression and that effect routes to
     // /intro/{next} — overriding our navigate. (Bug caught in verify.)
     if (!sessionId) return
+    saveNote()
     navigate(`/session/${sessionId}/summary`)
     await stopActiveTimer()
     await endWorkout(null, {
@@ -197,6 +232,21 @@ export function BlockCompleteOverlay({ blockPosition, onClose }: Props) {
           </div>
         </div>
       ) : null}
+
+      <div className={styles.noteField}>
+        <label className={styles.noteLabel} htmlFor="block-note">
+          Note for this block
+        </label>
+        <textarea
+          id="block-note"
+          className={styles.noteInput}
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          onBlur={saveNote}
+          placeholder="e.g. bump target weight by 5"
+          rows={2}
+        />
+      </div>
 
       <div className={styles.actions}>
         {nextBlockPosition !== null ? (

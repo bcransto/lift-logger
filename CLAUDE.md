@@ -93,10 +93,12 @@ After changing Node versions: `npm rebuild better-sqlite3` in both `lift-logger-
 
 Schema lives in [lift-logger-api/db/schema.js](lift-logger-api/db/schema.js): `exercises`, `workouts`, `workout_blocks`, `block_exercises`, `block_exercise_sets`, `sessions`, `session_sets`, `exercise_prs`, plus `schema_version`. All timestamps are INTEGER epoch millis, all booleans are INTEGER 0/1. Matches [`lift-logger-frontend/src/types/schema.ts`](lift-logger-frontend/src/types/schema.ts) exactly — the two files are a manual contract.
 
-`schema.js` is just the **baseline**; later columns are added via [migrations.js](lift-logger-api/db/migrations.js) `ALTER TABLE` migrations. Current `CURRENT_SCHEMA_VERSION = 4`:
+`schema.js` is just the **baseline**; later columns are added via [migrations.js](lift-logger-api/db/migrations.js) `ALTER TABLE` migrations. Current `CURRENT_SCHEMA_VERSION = 6`:
 - **v2** — Phase-2 columns on `sessions`: `paused_at`, `skipped_block_ids`, `work_timer_*`, `accumulated_paused_ms`, `pending_actuals`. Plus a `UNIQUE(session_id, block_position, ...)` index on `session_sets`.
 - **v3** — `block_exercise_sets.round_number` (NOT NULL DEFAULT 1) + new UNIQUE shape requires a table rebuild.
 - **v4** — `session_sets.skipped` (Bool01, default 0) so Skip Set writes a row distinct from a real log; `sessions.done_block_ids` (JSON array) so Finish-Block disposition is durable, parallel to `skipped_block_ids`.
+- **v5** — `workouts.deleted_at` (INTEGER, nullable) for soft-delete; HomeScreen filters out `deleted_at != null` rows and LWW propagates the tombstone.
+- **v6** — `sessions.block_notes` (TEXT, JSON object keyed by block id: `{ "<blockId>": "note" }`) for the per-block free-text note entered on the end-of-block screen (BlockCompleteOverlay), issue #34. Keyed by block id (like `done_block_ids` / `skipped_block_ids`) so it survives reorder. MCP `get_session` resolves it against the snapshot into a `blockNotes: [{ blockId, blockPosition, blockName, note }]` array; `get_session_history` returns the unresolved form (blockName null).
 
 `database.js` `normalizeRow` defaults `session_sets.skipped` to 0 and `block_exercise_sets.round_number` to 1 when missing — older clients can push rows without those fields and the server fills them. Add the same shim when introducing future NOT NULL columns to avoid breaking pre-deploy clients.
 
@@ -183,6 +185,8 @@ A "Skip Set" button used to live in this row but was removed once tap-focus → 
 - **+ Add a set** — `appendSetToCurrentBlock()`: session-only snapshot mutation, inherits just-recorded actuals as targets, resets active timer, jumps cursor to the new set.
 - **Workout overview** — navigates to `/workout/:id` (the **OverviewScreen**, which is now the live workout view; the in-session `WorkoutViewOverlay` is deleted). Calls `onClose()` first to dismiss the BCO. The BlockView ☰ Workout button does the same nav.
 - **Finish workout** — same end-immediately semantics as BlockView's End Workout (issue #30): stops the active timer, calls `endWorkout()`, navigates directly to /summary (Summary's "Return to workout" is the undo). Primary button on the last block; secondary otherwise. Shown on every BCO because users often treat the final block as optional. The `nextBlockPosition` calc skips past blocks already in `doneBlockIds` / `skippedBlockIds` so "Next block →" doesn't shove the user back into a finished one when they came in via Resume on a skipped block.
+
+Above the action stack is a **note textarea** (issue #34) — free text like "bump target weight by 5". Seeded once per block from `sessions.block_notes[block.id]` (a `useRef` guards against the live-query re-seeding mid-type), saved on blur and defensively at the top of every action handler via the `setBlockNote(blockId, note)` store action (schema v6). The note is keyed by block id, surfaces on SummaryScreen's **BLOCK NOTES** section, and is read back by MCP `get_session` — the whole point is that Claude sees the per-block commentary when pulling recent sessions.
 
 ### Active timer — one slot, persisted
 

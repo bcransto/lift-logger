@@ -81,7 +81,9 @@ const TABLE_COLUMNS = {
     'work_timer_started_at', 'work_timer_duration_sec',
     'accumulated_paused_ms', 'pending_actuals',
     // v4
-    'done_block_ids'
+    'done_block_ids',
+    // v6 — JSON object keyed by block id: per-block notes ("bump target weight by 5")
+    'block_notes'
   ],
   session_sets: [
     'session_id', 'exercise_id', 'block_position', 'block_exercise_position',

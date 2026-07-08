@@ -96,6 +96,39 @@
   color: var(--success, #22c55e);
 }
 
+.noteField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.noteLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.noteInput {
+  width: 100%;
+  /* 16px keeps iOS Safari from auto-zooming on focus (CLAUDE.md convention). */
+  font-size: 16px;
+  font-family: var(--font-sans, inherit);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.noteInput::placeholder {
+  color: var(--text-dim);
+}
+
 .actions {
   display: flex;
   flex-direction: column;

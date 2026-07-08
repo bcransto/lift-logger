@@ -99,6 +99,43 @@
   letter-spacing: 0.04em;
 }
 
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.notesLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: var(--space-1);
+}
+
+.noteRow {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.noteName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.noteText {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
 .log {
   display: flex;
   flex-direction: column;

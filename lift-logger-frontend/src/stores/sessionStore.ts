@@ -157,6 +157,9 @@ export type SessionState = {
   undoSkip: (cursor: Cursor) => void
   skipBlock: (blockId: string) => Promise<void>
   finishBlock: (blockId: string) => Promise<void>
+  /** Save (or clear) the free-text note for a block on the current session.
+   *  Stored as JSON keyed by block id on sessions.block_notes; readable by MCP. */
+  setBlockNote: (blockId: string, note: string) => Promise<void>
   returnToBlock: (blockId: string) => Promise<void>
   endWorkout: (
     notes?: string | null,
@@ -517,6 +520,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       pending_actuals: null,
       // schema v4
       done_block_ids: null,
+      // schema v6
+      block_notes: null,
     }
     await db.sessions.put(row)
     set({
@@ -955,6 +960,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       })
     }
     set({ skippedBlockIds: nextSkipped, doneBlockIds: nextDone, cursor: nextCursor, timer: IDLE_TIMER })
+  },
+
+  async setBlockNote(blockId, note) {
+    const { sessionId } = get()
+    if (!sessionId) return
+    const ses = await db.sessions.get(sessionId)
+    if (!ses) return
+    let notes: Record<string, string> = {}
+    if (ses.block_notes) {
+      try {
+        const parsed = JSON.parse(ses.block_notes)
+        if (parsed && typeof parsed === 'object') notes = parsed as Record<string, string>
+      } catch { /* corrupt JSON — start fresh */ }
+    }
+    const trimmed = note.trim()
+    if (trimmed) notes[blockId] = trimmed
+    else delete notes[blockId]
+    const next = Object.keys(notes).length > 0 ? JSON.stringify(notes) : null
+    // No-op if unchanged so we don't churn updated_at (and re-sync) on blur.
+    if ((ses.block_notes ?? null) === next) return
+    await db.sessions.put({ ...ses, block_notes: next, updated_at: Date.now() })
   },
 
   async returnToBlock(blockId) {
