@@ -279,7 +279,12 @@ export function BlockView() {
     if (unlogged > 0) {
       if (!window.confirm(buildBlockConfirm('Finish'))) return
     }
-    await finishBlock(block.id)
+    // Mark the block done but keep the cursor on it (advanceCursor:false) so
+    // BlockView keeps rendering this block and the BlockCompleteOverlay can
+    // mount on top. Advancing would fire the cursor→URL / cursor-null routing
+    // effects and skip straight to the next block (or the end screen on the
+    // last block). The overlay owns next-block / finish navigation.
+    await finishBlock(block.id, { advanceCursor: false })
     setBlockCompletePos(block.position)
     openOverlay('blockComplete')
   }
@@ -716,12 +721,14 @@ export function BlockView() {
             )
           }
           // c.kind === 'finishBlock'
-          // On the last block overall the terminal card reads "✓ Finish
-          // Workout" and must END the session → /summary (issue #30), same
-          // as every other end-workout affordance. Mid-workout it's "✓ Mark
-          // as Done" and just advances (next block's intro takes over).
+          // The terminal card reads "✓ Finish Workout" on the last block and
+          // "✓ Mark as Done" mid-workout. Both open the BlockCompleteOverlay
+          // (the end-of-block note screen, issue #34) via onFinishBlock — the
+          // overlay's primary action then finishes the workout (last block) or
+          // moves to the next block. Previously last→onEnd and non-last→advance
+          // both skipped the overlay.
           const label = c.isLastBlockOverall ? '✓ Finish Workout' : '✓ Mark as Done'
-          const onFinishTap = c.isLastBlockOverall ? () => void onEnd() : onInlineNextLegacy
+          const onFinishTap = () => void onFinishBlock()
           return (
             <div key={`f${i}`} className={styles.finishBlockWrap}>
               <button

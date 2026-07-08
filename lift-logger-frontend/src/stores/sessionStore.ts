@@ -156,7 +156,7 @@ export type SessionState = {
   skipCurrentSet: () => Promise<{ undoCursor: Cursor } | null>
   undoSkip: (cursor: Cursor) => void
   skipBlock: (blockId: string) => Promise<void>
-  finishBlock: (blockId: string) => Promise<void>
+  finishBlock: (blockId: string, opts?: { advanceCursor?: boolean }) => Promise<void>
   /** Save (or clear) the free-text note for a block on the current session.
    *  Stored as JSON keyed by block id on sessions.block_notes; readable by MCP. */
   setBlockNote: (blockId: string, note: string) => Promise<void>
@@ -937,7 +937,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ skippedBlockIds: nextSkipped, doneBlockIds: nextDone, cursor: nextCursor, timer: IDLE_TIMER })
   },
 
-  async finishBlock(blockId) {
+  async finishBlock(blockId, opts) {
     const { sessionId, snapshot, skippedBlockIds, doneBlockIds } = get()
     if (!sessionId || !snapshot) return
     const nextDone = new Set(doneBlockIds)
@@ -946,7 +946,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const nextSkipped = new Set(skippedBlockIds)
     nextSkipped.delete(blockId)
     const cur = get().cursor
-    const nextCursor = cur ? advance(snapshot, cur, unionBlockIds(nextSkipped, nextDone)) : null
+    // Callers that open the BlockCompleteOverlay pass advanceCursor:false so the
+    // cursor stays on the just-finished block — advancing here would fire
+    // BlockView's cursor→URL / cursor-null routing effects and skip the overlay
+    // (the overlay owns next-block navigation). Default true for other callers.
+    const advanceCursor = opts?.advanceCursor !== false
+    const nextCursor = advanceCursor
+      ? (cur ? advance(snapshot, cur, unionBlockIds(nextSkipped, nextDone)) : null)
+      : cur
     const now = Date.now()
     const ses = await db.sessions.get(sessionId)
     if (ses) {
