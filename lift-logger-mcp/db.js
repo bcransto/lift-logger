@@ -125,34 +125,49 @@ function readWorkoutTree(workoutId) {
  *
  * Missing ids, positions, and set_numbers are auto-assigned. All exercise_ids
  * are validated up-front so the transaction can't fail halfway.
+ *
+ * FIELD-MERGE SEMANTICS: for rows that already exist (matched by id), an
+ * omitted (undefined) field keeps its current DB value; an explicit null
+ * clears a nullable field. Defaults only apply to newly-created rows. This
+ * makes spot-edits safe — send just { id, target_weight } for a set and every
+ * other field on that row survives. Omitted child rows are never deleted.
+ *
  * Returns the freshly-read workout tree.
  */
 function upsertWorkoutTree(tree) {
   if (!tree || typeof tree !== 'object') {
     throw new Error('upsertWorkoutTree: tree must be an object');
   }
-  if (!tree.name || typeof tree.name !== 'string') {
-    throw new Error('upsertWorkoutTree: name is required');
-  }
   const blocks = Array.isArray(tree.blocks) ? tree.blocks : [];
 
+  // undefined = keep existing; explicit null = clear; fallback applies to new rows.
+  const pick = (provided, existing, fallback = null) =>
+    provided !== undefined ? provided : (existing !== undefined ? existing : fallback);
+
   // --- Validate exercise_ids up front. ---
+  // exercise_id may be omitted for a block exercise that already exists (the
+  // stored value is kept); it is required for new rows.
   const exerciseCheck = db.prepare('SELECT id FROM exercises WHERE id = ?');
+  const beExistsCheck = db.prepare('SELECT id FROM block_exercises WHERE id = ?');
   for (const block of blocks) {
     const exes = Array.isArray(block.exercises) ? block.exercises : [];
     for (const be of exes) {
-      if (!be.exercise_id) {
-        throw new Error('upsertWorkoutTree: each block exercise requires exercise_id');
-      }
-      if (!exerciseCheck.get(be.exercise_id)) {
-        throw new Error(`upsertWorkoutTree: unknown exercise_id ${be.exercise_id}`);
+      if (be.exercise_id != null) {
+        if (!exerciseCheck.get(be.exercise_id)) {
+          throw new Error(`upsertWorkoutTree: unknown exercise_id ${be.exercise_id}`);
+        }
+      } else if (!be.id || !beExistsCheck.get(be.id)) {
+        throw new Error('upsertWorkoutTree: exercise_id is required for new block exercises');
       }
     }
   }
 
   const workoutId = tree.id || genId('workout');
   const now = nowMs();
-  const existingWorkout = db.prepare('SELECT created_at FROM workouts WHERE id = ?').get(workoutId);
+  const existingWorkout = db.prepare('SELECT * FROM workouts WHERE id = ?').get(workoutId);
+  if (!existingWorkout && (!tree.name || typeof tree.name !== 'string')) {
+    throw new Error('upsertWorkoutTree: name is required when creating a workout');
+  }
   const createdAt = existingWorkout?.created_at ?? now;
 
   const tx = db.transaction(() => {
@@ -171,12 +186,16 @@ function upsertWorkoutTree(tree) {
         updated_at = @updated_at
     `).run({
       id: workoutId,
-      name: tree.name,
-      description: tree.description ?? null,
-      tags: JSON.stringify(Array.isArray(tree.tags) ? tree.tags : []),
-      starred: tree.starred ? 1 : 0,
-      est_duration: Number.isFinite(tree.est_duration) ? tree.est_duration : null,
-      created_by: tree.created_by ?? 'agent',
+      name: pick(tree.name, existingWorkout?.name),
+      description: pick(tree.description, existingWorkout?.description),
+      tags: tree.tags !== undefined
+        ? JSON.stringify(Array.isArray(tree.tags) ? tree.tags : [])
+        : (existingWorkout?.tags ?? '[]'),
+      starred: tree.starred !== undefined ? (tree.starred ? 1 : 0) : (existingWorkout?.starred ?? 0),
+      est_duration: tree.est_duration !== undefined
+        ? (Number.isFinite(tree.est_duration) ? tree.est_duration : null)
+        : (existingWorkout?.est_duration ?? null),
+      created_by: pick(tree.created_by, existingWorkout?.created_by, 'agent'),
       created_at: createdAt,
       updated_at: now,
       last_performed: null,
@@ -184,13 +203,17 @@ function upsertWorkoutTree(tree) {
 
     blocks.forEach((block, blockIdx) => {
       const blockId = block.id || genId('block');
-      const position = Number.isFinite(block.position) ? block.position : blockIdx + 1;
-      const kind = block.kind ?? 'single';
-      const rounds = Number.isFinite(block.rounds) ? block.rounds : 1;
-      const restAfterSec = block.rest_after_sec ?? null;
-      const setupCue = block.setup_cue ?? null;
+      const existingBlock = db.prepare('SELECT * FROM workout_blocks WHERE id = ?').get(blockId);
 
-      const existingBlock = db.prepare('SELECT created_at FROM workout_blocks WHERE id = ?').get(blockId);
+      const position = Number.isFinite(block.position)
+        ? block.position
+        : (existingBlock ? existingBlock.position : blockIdx + 1);
+      const kind = pick(block.kind, existingBlock?.kind, 'single');
+      const rounds = Number.isFinite(block.rounds)
+        ? block.rounds
+        : (existingBlock ? existingBlock.rounds : 1);
+      const restAfterSec = pick(block.rest_after_sec, existingBlock?.rest_after_sec);
+      const setupCue = pick(block.setup_cue, existingBlock?.setup_cue);
       const blockCreated = existingBlock?.created_at ?? now;
 
       db.prepare(`
@@ -221,10 +244,14 @@ function upsertWorkoutTree(tree) {
       const exes = Array.isArray(block.exercises) ? block.exercises : [];
       exes.forEach((be, beIdx) => {
         const beId = be.id || genId('be');
-        const bePos = Number.isFinite(be.position) ? be.position : beIdx + 1;
-        const altIds = Array.isArray(be.alt_exercise_ids) ? be.alt_exercise_ids : [];
+        const existingBe = db.prepare('SELECT * FROM block_exercises WHERE id = ?').get(beId);
 
-        const existingBe = db.prepare('SELECT created_at FROM block_exercises WHERE id = ?').get(beId);
+        const bePos = Number.isFinite(be.position)
+          ? be.position
+          : (existingBe ? existingBe.position : beIdx + 1);
+        const altIdsJson = be.alt_exercise_ids !== undefined
+          ? JSON.stringify(Array.isArray(be.alt_exercise_ids) ? be.alt_exercise_ids : [])
+          : (existingBe?.alt_exercise_ids ?? '[]');
         const beCreated = existingBe?.created_at ?? now;
 
         db.prepare(`
@@ -241,9 +268,9 @@ function upsertWorkoutTree(tree) {
         `).run({
           id: beId,
           block_id: blockId,
-          exercise_id: be.exercise_id,
+          exercise_id: be.exercise_id ?? existingBe?.exercise_id,
           position: bePos,
-          alt_exercise_ids: JSON.stringify(altIds),
+          alt_exercise_ids: altIdsJson,
           created_at: beCreated,
           updated_at: now,
         });
@@ -252,16 +279,28 @@ function upsertWorkoutTree(tree) {
         // Track set_number fill-in per (round_number) so per-round sets that
         // omit set_number get numbered independently of other rounds.
         const nextSetNumberByRound = new Map();
+        const maxSetNumStmt = db.prepare(
+          'SELECT MAX(set_number) AS m FROM block_exercise_sets WHERE block_exercise_id = ? AND round_number = ?'
+        );
         sets.forEach((s) => {
           const sId = s.id || genId('bes');
-          const roundNum = Number.isFinite(s.round_number) && s.round_number > 0 ? s.round_number : 1;
-          // Auto-assign set_number per round if omitted. Keeps round 2 overrides
-          // aligned to round 1 when the author lists them in order.
+          const existingSet = db.prepare('SELECT * FROM block_exercise_sets WHERE id = ?').get(sId);
+
+          const roundNum = Number.isFinite(s.round_number) && s.round_number > 0
+            ? s.round_number
+            : (existingSet ? existingSet.round_number : 1);
+          // Auto-assign set_number per round if omitted (new rows only —
+          // existing rows keep their stored number). Continues from the max
+          // already in the DB for this (be, round) so appending a set to an
+          // existing exercise doesn't collide with stored set_numbers.
           let setNum;
           if (Number.isFinite(s.set_number)) {
             setNum = s.set_number;
+          } else if (existingSet) {
+            setNum = existingSet.set_number;
           } else {
-            const cur = nextSetNumberByRound.get(roundNum) ?? 0;
+            const cur = nextSetNumberByRound.get(roundNum)
+              ?? (maxSetNumStmt.get(beId, roundNum)?.m ?? 0);
             setNum = cur + 1;
           }
           nextSetNumberByRound.set(roundNum, setNum);
@@ -273,7 +312,6 @@ function upsertWorkoutTree(tree) {
             );
           }
 
-          const existingSet = db.prepare('SELECT created_at FROM block_exercise_sets WHERE id = ?').get(sId);
           const setCreated = existingSet?.created_at ?? now;
 
           db.prepare(`
@@ -306,15 +344,17 @@ function upsertWorkoutTree(tree) {
             block_exercise_id: beId,
             set_number: setNum,
             round_number: roundNum,
-            target_weight: s.target_weight ?? null,
-            target_pct_1rm: s.target_pct_1rm ?? null,
-            target_reps: s.target_reps ?? null,
-            target_reps_each: s.target_reps_each ? 1 : 0,
-            target_duration_sec: s.target_duration_sec ?? null,
-            target_rpe: s.target_rpe ?? null,
-            is_peak: s.is_peak ? 1 : 0,
-            rest_after_sec: s.rest_after_sec ?? null,
-            notes: s.notes ?? null,
+            target_weight: pick(s.target_weight, existingSet?.target_weight),
+            target_pct_1rm: pick(s.target_pct_1rm, existingSet?.target_pct_1rm),
+            target_reps: pick(s.target_reps, existingSet?.target_reps),
+            target_reps_each: s.target_reps_each !== undefined
+              ? (s.target_reps_each ? 1 : 0)
+              : (existingSet?.target_reps_each ?? 0),
+            target_duration_sec: pick(s.target_duration_sec, existingSet?.target_duration_sec),
+            target_rpe: pick(s.target_rpe, existingSet?.target_rpe),
+            is_peak: s.is_peak !== undefined ? (s.is_peak ? 1 : 0) : (existingSet?.is_peak ?? 0),
+            rest_after_sec: pick(s.rest_after_sec, existingSet?.rest_after_sec),
+            notes: pick(s.notes, existingSet?.notes),
             created_at: setCreated,
             updated_at: now,
           });

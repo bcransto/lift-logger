@@ -64,7 +64,9 @@ const blockExerciseSetSchema = z.object({
 
 const blockExerciseSchema = z.object({
   id: z.string().optional(),
-  exercise_id: z.string(),
+  exercise_id: z.string().optional().describe(
+    'Required for new block exercises; may be omitted on update (matched by id) to keep the current exercise'
+  ),
   position: z.number().int().positive().optional(),
   alt_exercise_ids: z.array(z.string()).optional().describe('Suggested swaps for the Swap sheet'),
   sets: z.array(blockExerciseSetSchema).optional(),
@@ -85,7 +87,7 @@ const workoutTreeCreateSchema = {
   description: z.string().optional().nullable(),
   tags: z.array(z.string()).optional().describe('Filterable tags (lower, upper, hiit, pyramid, ...)'),
   starred: z.boolean().optional(),
-  est_duration: z.number().int().positive().optional().describe('Minutes'),
+  est_duration: z.number().int().positive().optional().nullable().describe('Minutes; explicit null clears it on update'),
   created_by: z.enum(['user', 'agent']).optional().describe("Defaults to 'agent' for MCP writes"),
   blocks: z.array(workoutBlockSchema).optional().describe('Nested block tree'),
 };
@@ -93,6 +95,7 @@ const workoutTreeCreateSchema = {
 const workoutTreeUpdateSchema = {
   id: z.string().describe('Workout id to update'),
   ...workoutTreeCreateSchema,
+  name: z.string().min(1).optional().describe('Workout name (omit to keep current)'),
 };
 
 // -------------------- registration --------------------
@@ -171,7 +174,7 @@ function registerTools(server) {
 
   server.tool(
     'update_workout',
-    'Upsert an existing workout tree. Merge-safe: omitted children are NOT deleted. Use delete_workout for full removal.',
+    'Field-merge upsert of a workout tree. Omitted child rows are kept (never deleted). For existing rows (matched by id), omitted fields keep their current values and explicit null clears them — spot-edits like { id, target_weight } are safe. New rows require name/exercise_id and get defaults. Positions and set_numbers are preserved unless explicitly changed. Use delete_workout for full removal.',
     workoutTreeUpdateSchema,
     wrap(updateWorkout),
   );

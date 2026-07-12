@@ -87,10 +87,10 @@ function createWorkout(payload) {
 }
 
 /**
- * update_workout — upsert an existing workout tree. `id` is required.
- * Merge-safe: children not mentioned in the payload are NOT deleted. Callers
- * should pass explicit ids for rows they want to keep, and use delete_workout
- * for full removal.
+ * update_workout — field-merge upsert of an existing workout tree. `id` is
+ * required. Omitted child rows are NOT deleted; for existing rows (matched by
+ * id) omitted fields keep their current values and explicit null clears them
+ * (see upsertWorkoutTree). Use delete_workout for full removal.
  */
 function updateWorkout(payload) {
   if (!payload.id) throw new Error('update_workout: id is required');
