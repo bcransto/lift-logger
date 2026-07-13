@@ -20,7 +20,11 @@ export async function deleteSession(sessionId: string): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   })
-  if (!r.ok) {
+  // 404 means the session is already gone server-side — commonly because it was
+  // hard-deleted elsewhere (MCP delete_session, another device) and this device
+  // still has the stale local row. That's a success for a delete: fall through
+  // to the local Dexie cleanup so the phantom session can finally be cleared.
+  if (!r.ok && r.status !== 404) {
     const body = await r.text().catch(() => '')
     throw new Error(body || `delete failed: http ${r.status}`)
   }
